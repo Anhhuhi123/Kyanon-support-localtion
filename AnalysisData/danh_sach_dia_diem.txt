@@ -1,0 +1,537 @@
+================================================================================
+DANH SÁCH TẤT CẢ CÁC LOẠI ĐỊA ĐIỂM
+Tổng số: 528 loại địa điểm - 2942 địa điểm
+Sắp xếp: Từ nhiều đến ít
+================================================================================
+
+  1. Coffee shop                                        :  158 địa điểm
+  2. Bar                                                :  140 địa điểm
+  3. Restaurant                                         :  122 địa điểm
+  4. Cafe                                               :  119 địa điểm
+  5. Tourist attraction                                 :  106 địa điểm
+  6. Cocktail bar                                       :   91 địa điểm
+  7. Hotel                                              :   64 địa điểm
+  8. Supermarket                                        :   61 địa điểm
+  9. Bakery                                             :   57 địa điểm
+ 10. Historical landmark                                :   49 địa điểm
+ 11. Market                                             :   45 địa điểm
+ 12. Ice cream shop                                     :   41 địa điểm
+ 13. Catholic church                                    :   37 địa điểm
+ 14. Espresso bar                                       :   37 địa điểm
+ 15. Pub                                                :   36 địa điểm
+ 16. Museum                                             :   36 địa điểm
+ 17. Park                                               :   34 địa điểm
+ 18. Shopping mall                                      :   34 địa điểm
+ 19. ,                                                  :   33 địa điểm
+ 20. Mediterranean restaurant                           :   32 địa điểm
+ 21. Monastery                                          :   30 địa điểm
+ 22. Night club                                         :   27 địa điểm
+ 23. Cultural center                                    :   25 địa điểm
+ 24. Spanish restaurant                                 :   24 địa điểm
+ 25. Hiking area                                        :   24 địa điểm
+ 26. Bar & grill                                        :   21 địa điểm
+ 27. Event venue                                        :   21 địa điểm
+ 28. Bubble tea store                                   :   20 địa điểm
+ 29. Beer garden                                        :   19 địa điểm
+ 30. Brunch restaurant                                  :   19 địa điểm
+ 31. Breakfast restaurant                               :   18 địa điểm
+ 32. Disco club                                         :   17 địa điểm
+ 33. Karaoke bar                                        :   17 địa điểm
+ 34. Art center                                         :   17 địa điểm
+ 35. Church                                             :   17 địa điểm
+ 36. Brewpub                                            :   16 địa điểm
+ 37. Wine bar                                           :   15 địa điểm
+ 38. Tea house                                          :   14 địa điểm
+ 39. Sports bar                                         :   14 địa điểm
+ 40. Concert hall                                       :   14 địa điểm
+ 41. Playground                                         :   14 địa điểm
+ 42. Lounge                                             :   13 địa điểm
+ 43. Beach                                              :   13 địa điểm
+ 44. Tapas bar                                          :   13 địa điểm
+ 45. Flea market                                        :   12 địa điểm
+ 46. Athletic club                                      :   12 địa điểm
+ 47. Coffee store                                       :   11 địa điểm
+ 48. Outdoor sports store                               :   11 địa điểm
+ 49. Art gallery                                        :   10 địa điểm
+ 50. Fine dining restaurant                             :   10 địa điểm
+ 51. Fusion restaurant                                  :   10 địa điểm
+ 52. Tapas restaurant                                   :   10 địa điểm
+ 53. Running store                                      :   10 địa điểm
+ 54. Badminton club                                     :   10 địa điểm
+ 55. Bistro                                             :    9 địa điểm
+ 56. Beach clothing store                               :    9 địa điểm
+ 57. Seafood restaurant                                 :    9 địa điểm
+ 58. Art museum                                         :    9 địa điểm
+ 59. Sportswear store                                   :    9 địa điểm
+ 60. Airport                                            :    9 địa điểm
+ 61. Andalusian restaurant                              :    8 địa điểm
+ 62. Adventure sports center                            :    8 địa điểm
+ 63. Store                                              :    8 địa điểm
+ 64. Health food restaurant                             :    8 địa điểm
+ 65. Aquarium shop                                      :    8 địa điểm
+ 66. Pet store                                          :    8 địa điểm
+ 67. Cultural landmark                                  :    8 địa điểm
+ 68. Sports club                                        :    8 địa điểm
+ 69. Evangelical church                                 :    8 địa điểm
+ 70. Snack bar                                          :    8 địa điểm
+ 71. Family restaurant                                  :    7 địa điểm
+ 72. Gastropub                                          :    7 địa điểm
+ 73. Live music bar                                     :    7 địa điểm
+ 74. Grill                                              :    7 địa điểm
+ 75. City park                                          :    7 địa điểm
+ 76. Pastry shop                                        :    7 địa điểm
+ 77. Grocery store                                      :    7 địa điểm
+ 78. Vegan restaurant                                   :    7 địa điểm
+ 79. Piano bar                                          :    7 địa điểm
+ 80. Pet supply store                                   :    7 địa điểm
+ 81. Hypermarket                                        :    7 địa điểm
+ 82. Cafeteria                                          :    7 địa điểm
+ 83. Japanese restaurant                                :    7 địa điểm
+ 84. Art cafe                                           :    7 địa điểm
+ 85. Brewery                                            :    6 địa điểm
+ 86. Sports complex                                     :    6 địa điểm
+ 87. Botanical garden                                   :    6 địa điểm
+ 88. Vegetarian cafe and deli                           :    6 địa điểm
+ 89. Coworking space                                    :    6 địa điểm
+ 90. Live music venue                                   :    6 địa điểm
+ 91. Animal feed store                                  :    6 địa điểm
+ 92. Pet groomer                                        :    6 địa điểm
+ 93. Clothing store                                     :    6 địa điểm
+ 94. Function room facility                             :    6 địa điểm
+ 95. Gym                                                :    6 địa điểm
+ 96. Garden                                             :    6 địa điểm
+ 97. Asian fusion restaurant                            :    6 địa điểm
+ 98. Train station                                      :    6 địa điểm
+ 99. Pizza restaurant                                   :    5 địa điểm
+100. Discount supermarket                               :    5 địa điểm
+101. Coffee roasters                                    :    5 địa điểm
+102. Vietnamese restaurant                              :    5 địa điểm
+103. Seafood market                                     :    5 địa điểm
+104. Observation deck                                   :    5 địa điểm
+105. Meat dish restaurant                               :    5 địa điểm
+106. Musical club                                       :    5 địa điểm
+107. Public beach                                       :    5 địa điểm
+108. Stand bar                                          :    5 địa điểm
+109. Caterer                                            :    5 địa điểm
+110. Amusement center                                   :    5 địa điểm
+111. Dog park                                           :    5 địa điểm
+112. Vegetarian restaurant                              :    5 địa điểm
+113. Food court                                         :    5 địa điểm
+114. Bus station                                        :    5 địa điểm
+115. Travel agency                                      :    5 địa điểm
+116. Italian restaurant                                 :    4 địa điểm
+117. Pizza Takeout                                      :    4 địa điểm
+118. Produce market                                     :    4 địa điểm
+119. Tour operator                                      :    4 địa điểm
+120. Castle                                             :    4 địa điểm
+121. Charcuterie                                        :    4 địa điểm
+122. Tiffin center                                      :    4 địa điểm
+123. Organic restaurant                                 :    4 địa điểm
+124. Indoor playground                                  :    4 địa điểm
+125. Barbecue restaurant                                :    4 địa điểm
+126. Swimming pool                                      :    4 địa điểm
+127. Scenic spot                                        :    4 địa điểm
+128. Fresh food market                                  :    4 địa điểm
+129. Yoga studio                                        :    4 địa điểm
+130. Art studio                                         :    4 địa điểm
+131. Sushi restaurant                                   :    4 địa điểm
+132. Girl bar                                           :    4 địa điểm
+133. Sculpture                                          :    4 địa điểm
+134. Fast food restaurant                               :    4 địa điểm
+135. Amusement park                                     :    4 địa điểm
+136. Resort hotel                                       :    4 địa điểm
+137. Parking lot                                        :    4 địa điểm
+138. Pizza delivery                                     :    3 địa điểm
+139. Delivery Restaurant                                :    3 địa điểm
+140. War museum                                         :    3 địa điểm
+141. Place of worship                                   :    3 địa điểm
+142. Costume store                                      :    3 địa điểm
+143. Butcher shop                                       :    3 địa điểm
+144. Fish store                                         :    3 địa điểm
+145. Tavern                                             :    3 địa điểm
+146. Irish pub                                          :    3 địa điểm
+147. Dart bar                                           :    3 địa điểm
+148. Beer hall                                          :    3 địa điểm
+149. Fish restaurant                                    :    3 địa điểm
+150. Dance club                                         :    3 địa điểm
+151. Social club                                        :    3 địa điểm
+152. Club                                               :    3 địa điểm
+153. Heritage building                                  :    3 địa điểm
+154. Pharmacy                                           :    3 địa điểm
+155. Churreria                                          :    3 địa điểm
+156. Beer store                                         :    3 địa điểm
+157. Convent                                            :    3 địa điểm
+158. Hostel                                             :    3 địa điểm
+159. Gymnastics center                                  :    3 địa điểm
+160. Heritage preservation                              :    3 địa điểm
+161. History museum                                     :    3 địa điểm
+162. Arts organization                                  :    3 địa điểm
+163. Casino                                             :    3 địa điểm
+164. Diner                                              :    3 địa điểm
+165. Coffee stand                                       :    3 địa điểm
+166. Internet cafe                                      :    3 địa điểm
+167. Monument                                           :    3 địa điểm
+168. Buffet restaurant                                  :    3 địa điểm
+169. Convenience store                                  :    3 địa điểm
+170. Pickleball court                                   :    3 địa điểm
+171. Outlet store                                       :    3 địa điểm
+172. Car wash                                           :    3 địa điểm
+173. Discount store                                     :    3 địa điểm
+174. General store                                      :    3 địa điểm
+175. Optician                                           :    3 địa điểm
+176. Telecommunications service provider                :    3 địa điểm
+177. Home goods store                                   :    3 địa điểm
+178. Juice shop                                         :    3 địa điểm
+179. Auto market                                        :    3 địa điểm
+180. Sweets and dessert buffet                          :    3 địa điểm
+181. Cake shop                                          :    3 địa điểm
+182. Exercise equipment store                           :    3 địa điểm
+183. Swimming lake                                      :    3 địa điểm
+184. Water park                                         :    3 địa điểm
+185. Swimwear store                                     :    3 địa điểm
+186. Seafood wholesaler                                 :    3 địa điểm
+187. American restaurant                                :    2 địa điểm
+188. Western restaurant                                 :    2 địa điểm
+189. Korean grocery store                               :    2 địa điểm
+190. Bicycle club                                       :    2 địa điểm
+191. Bicycle rental service                             :    2 địa điểm
+192. Tour agency                                        :    2 địa điểm
+193. Argentinian restaurant                             :    2 địa điểm
+194. Buddhist temple                                    :    2 địa điểm
+195. Meditation center                                  :    2 địa điểm
+196. Pie shop                                           :    2 địa điểm
+197. Deli                                               :    2 địa điểm
+198. Bagel shop                                         :    2 địa điểm
+199. Interior plant service                             :    2 địa điểm
+200. Pool billard club                                  :    2 địa điểm
+201. Coffee wholesaler                                  :    2 địa điểm
+202. Hookah bar                                         :    2 địa điểm
+203. Airport shuttle service                            :    2 địa điểm
+204. Minibus taxi service                               :    2 địa điểm
+205. Taxi service                                       :    2 địa điểm
+206. Gluten-free restaurant                             :    2 địa điểm
+207. Carvery                                            :    2 địa điểm
+208. European restaurant                                :    2 địa điểm
+209. Pilates studio                                     :    2 địa điểm
+210. Blues club                                         :    2 địa điểm
+211. Cat cafe                                           :    2 địa điểm
+212. Toy store                                          :    2 địa điểm
+213. Video game store                                   :    2 địa điểm
+214. Gourmet grocery store                              :    2 địa điểm
+215. Modern European restaurant                         :    2 địa điểm
+216. Video karaoke                                      :    2 địa điểm
+217. Religious institution                              :    2 địa điểm
+218. Board game club                                    :    2 địa điểm
+219. Fruit and vegetable store                          :    2 địa điểm
+220. Variety store                                      :    2 địa điểm
+221. Soccer field                                       :    2 địa điểm
+222. Fitness center                                     :    2 địa điểm
+223. Health food store                                  :    2 địa điểm
+224. Natural goods store                                :    2 địa điểm
+225. Photography studio                                 :    2 địa điểm
+226. Marketing agency                                   :    2 địa điểm
+227. Campground                                         :    2 địa điểm
+228. Gardener                                           :    2 địa điểm
+229. Hamburger restaurant                               :    2 địa điểm
+230. Dessert restaurant                                 :    2 địa điểm
+231. Homestay                                           :    2 địa điểm
+232. Training center                                    :    2 địa điểm
+233. Event planner                                      :    2 địa điểm
+234. Wholesale bakery                                   :    2 địa điểm
+235. Tea store                                          :    2 địa điểm
+236. Memorial                                           :    2 địa điểm
+237. Corporate office                                   :    2 địa điểm
+238. Furniture store                                    :    2 địa điểm
+239. Painting                                           :    2 địa điểm
+240. Sandwich shop                                      :    2 địa điểm
+241. Guest house                                        :    2 địa điểm
+242. Local history museum                               :    2 địa điểm
+243. Delivery service                                   :    2 địa điểm
+244. Parking garage                                     :    2 địa điểm
+245. Banquet hall                                       :    2 địa điểm
+246. Showroom                                           :    2 địa điểm
+247. Baby store                                         :    2 địa điểm
+248. Electronics store                                  :    2 địa điểm
+249. Sporting goods store                               :    2 địa điểm
+250. Badminton complex                                  :    2 địa điểm
+251. Drawing lessons                                    :    2 địa điểm
+252. Basketball court                                   :    2 địa điểm
+253. Lunch restaurant                                   :    2 địa điểm
+254. Clothes market                                     :    2 địa điểm
+255. Meeting planning service                           :    2 địa điểm
+256. Furniture maker                                    :    2 địa điểm
+257. Garden center                                      :    2 địa điểm
+258. Wedding venue                                      :    2 địa điểm
+259. Organic food store                                 :    2 địa điểm
+260. Flower market                                      :    2 địa điểm
+261. Auto parts market                                  :    2 địa điểm
+262. RV park                                            :    2 địa điểm
+263. Children hall                                      :    2 địa điểm
+264. Pool hall                                          :    2 địa điểm
+265. Party planner                                      :    2 địa điểm
+266. Car dealer                                         :    2 địa điểm
+267. Florist                                            :    2 địa điểm
+268. Dance hall                                         :    2 địa điểm
+269. Gymnastics club                                    :    2 địa điểm
+270. Dog cafe                                           :    2 địa điểm
+271. Northern Italian restaurant                        :    1 địa điểm
+272. Southern Italian restaurant                        :    1 địa điểm
+273. Russian restaurant                                 :    1 địa điểm
+274. Bicycle repair shop                                :    1 địa điểm
+275. Rock climbing gym                                  :    1 địa điểm
+276. Rock climbing                                      :    1 địa điểm
+277. Army museum                                        :    1 địa điểm
+278. Historical place                                   :    1 địa điểm
+279. Beach volleyball court                             :    1 địa điểm
+280. Valencian restaurant                               :    1 địa điểm
+281. Tea manufacturer                                   :    1 địa điểm
+282. Ceramic manufacturer                               :    1 địa điểm
+283. Pottery manufacturer                               :    1 địa điểm
+284. Cured ham bar                                      :    1 địa điểm
+285. Greengrocer                                        :    1 địa điểm
+286. Doughnut Shop                                      :    1 địa điểm
+287. Wholesale plant nursery                            :    1 địa điểm
+288. Plant nursery                                      :    1 địa điểm
+289. Donut shop                                         :    1 địa điểm
+290. Library                                            :    1 địa điểm
+291. Wok restaurant                                     :    1 địa điểm
+292. Irish restaurant                                   :    1 địa điểm
+293. Tex-Mex restaurant                                 :    1 địa điểm
+294. German restaurant                                  :    1 địa điểm
+295. Rice restaurant                                    :    1 địa điểm
+296. Fortress                                           :    1 địa điểm
+297. Galician restaurant                                :    1 địa điểm
+298. Brasserie                                          :    1 địa điểm
+299. Belgian restaurant                                 :    1 địa điểm
+300. French restaurant                                  :    1 địa điểm
+301. Comedy club                                        :    1 địa điểm
+302. Rock music club                                    :    1 địa điểm
+303. Animal cafe                                        :    1 địa điểm
+304. Car repair and maintenance service                 :    1 địa điểm
+305. Cell phone store                                   :    1 địa điểm
+306. Dry cleaner                                        :    1 địa điểm
+307. Office space rental agency                         :    1 địa điểm
+308. Feed manufacturer                                  :    1 địa điểm
+309. Bottled water supplier                             :    1 địa điểm
+310. Drinking water supplier                            :    1 địa điểm
+311. Nature preserve                                    :    1 địa điểm
+312. Metal workshop                                     :    1 địa điểm
+313. Mutton barbecue restaurant                         :    1 địa điểm
+314. Beach pavillion                                    :    1 địa điểm
+315. Karate club                                        :    1 địa điểm
+316. Archery club                                       :    1 địa điểm
+317. Chapel                                             :    1 địa điểm
+318. Religious destination                              :    1 địa điểm
+319. Religious organization                             :    1 địa điểm
+320. Education center                                   :    1 địa điểm
+321. After school program                               :    1 địa điểm
+322. Magician                                           :    1 địa điểm
+323. Oxygen cocktail spot                               :    1 địa điểm
+324. Observatory                                        :    1 địa điểm
+325. Outdoor activity organiser                         :    1 địa điểm
+326. Nature reserve                                     :    1 địa điểm
+327. Personal trainer                                   :    1 địa điểm
+328. Castilian restaurant                               :    1 địa điểm
+329. Beauty product supplier                            :    1 địa điểm
+330. Latin American restaurant                          :    1 địa điểm
+331. Venezuelan restaurant                              :    1 địa điểm
+332. Protestant church                                  :    1 địa điểm
+333. Canteen                                            :    1 địa điểm
+334. Shisha bar                                         :    1 địa điểm
+335. Natural history museum                             :    1 địa điểm
+336. Paintings store                                    :    1 địa điểm
+337. Art dealer                                         :    1 địa điểm
+338. Artist                                             :    1 địa điểm
+339. Branding agency                                    :    1 địa điểm
+340. Basket supplier                                    :    1 địa điểm
+341. Camping store                                      :    1 địa điểm
+342. Fitness equipment wholesaler                       :    1 địa điểm
+343. Rugby club                                         :    1 địa điểm
+344. Soccer store                                       :    1 địa điểm
+345. Table tennis club                                  :    1 địa điểm
+346. Volleyball club                                    :    1 địa điểm
+347. Association / Organization                         :    1 địa điểm
+348. Caucasian restaurant                               :    1 địa điểm
+349. Gay bar                                            :    1 địa điểm
+350. Liquor store                                       :    1 địa điểm
+351. Yakitori restaurant                                :    1 địa điểm
+352. Anglican church                                    :    1 địa điểm
+353. Dinner theater                                     :    1 địa điểm
+354. Noodle shop                                        :    1 địa điểm
+355. Boxing gym                                         :    1 địa điểm
+356. Private tutor                                      :    1 địa điểm
+357. Weightlifting area                                 :    1 địa điểm
+358. Yoga instructor                                    :    1 địa điểm
+359. Assemblies of God church                           :    1 địa điểm
+360. Pagoda                                             :    1 địa điểm
+361. Athletic track                                     :    1 địa điểm
+362. Picture frame shop                                 :    1 địa điểm
+363. Pottery classes                                    :    1 địa điểm
+364. Makerspace                                         :    1 địa điểm
+365. Bed & breakfast                                    :    1 địa điểm
+366. Youth hostel                                       :    1 địa điểm
+367. Christian church                                   :    1 địa điểm
+368. Promenade                                          :    1 địa điểm
+369. Civic center                                       :    1 địa điểm
+370. Mobile home park                                   :    1 địa điểm
+371. Chinese restaurant                                 :    1 địa điểm
+372. Hot pot restaurant                                 :    1 địa điểm
+373. Event management company                           :    1 địa điểm
+374. Pho restaurant                                     :    1 địa điểm
+375. Gas station                                        :    1 địa điểm
+376. Alternative fuel station                           :    1 địa điểm
+377. Fuel supplier                                      :    1 địa điểm
+378. Steak house                                        :    1 địa điểm
+379. Buddhist supplies store                            :    1 địa điểm
+380. Heritage museum                                    :    1 địa điểm
+381. Spa                                                :    1 địa điểm
+382. Holiday apartment                                  :    1 địa điểm
+383. Extended stay hotel                                :    1 địa điểm
+384. Padel club                                         :    1 địa điểm
+385. Footwear wholesaler                                :    1 địa điểm
+386. Tennis store                                       :    1 địa điểm
+387. Night market                                       :    1 địa điểm
+388. Small plates restaurant                            :    1 địa điểm
+389. Salad shop                                         :    1 địa điểm
+390. Jazz club                                          :    1 địa điểm
+391. Fruit parlor                                       :    1 địa điểm
+392. Used clothing store                                :    1 địa điểm
+393. Fried chicken takeaway                             :    1 địa điểm
+394. Shelving store                                     :    1 địa điểm
+395. Voter registration office                          :    1 địa điểm
+396. Internet marketing service                         :    1 địa điểm
+397. Alliance church                                    :    1 địa điểm
+398. Martial arts club                                  :    1 địa điểm
+399. Nightclub                                          :    1 địa điểm
+400. Home improvement store                             :    1 địa điểm
+401. Bathroom supply store                              :    1 địa điểm
+402. Building materials store                           :    1 địa điểm
+403. Kitchen furniture store                            :    1 địa điểm
+404. Paint store                                        :    1 địa điểm
+405. Pottery store                                      :    1 địa điểm
+406. Tool store                                         :    1 địa điểm
+407. Chop bar                                           :    1 địa điểm
+408. Dairy farm                                         :    1 địa điểm
+409. Frozen yogurt shop                                 :    1 địa điểm
+410. Dairy store                                        :    1 địa điểm
+411. Building materials market                          :    1 địa điểm
+412. Boarding house                                     :    1 địa điểm
+413. Catholic cathedral                                 :    1 địa điểm
+414. Auto repair shop                                   :    1 địa điểm
+415. Interior designer                                  :    1 địa điểm
+416. Interior fitting contractor                        :    1 địa điểm
+417. Pachinko parlor                                    :    1 địa điểm
+418. Energy equipment and solutions                     :    1 địa điểm
+419. Pool cleaning service                              :    1 địa điểm
+420. Fishing club                                       :    1 địa điểm
+421. Building society                                   :    1 địa điểm
+422. Indoor swimming pool                               :    1 địa điểm
+423. Pond contractor                                    :    1 địa điểm
+424. Sewage disposal service                            :    1 địa điểm
+425. Swimming pool contractor                           :    1 địa điểm
+426. Badminton court                                    :    1 địa điểm
+427. Bar restaurant furniture store                     :    1 địa điểm
+428. Furniture repair shop                              :    1 địa điểm
+429. Interior construction contractor                   :    1 địa điểm
+430. Country food restaurant                            :    1 địa điểm
+431. Artistic handicrafts                               :    1 địa điểm
+432. Sculpture museum                                   :    1 địa điểm
+433. Statuary                                           :    1 địa điểm
+434. Bar stool supplier                                 :    1 địa điểm
+435. Car sharing location                               :    1 địa điểm
+436. Technology museum                                  :    1 địa điểm
+437. Ethnographic museum                                :    1 địa điểm
+438. DJ service                                         :    1 địa điểm
+439. Takeout Restaurant                                 :    1 địa điểm
+440. Car detailing service                              :    1 địa điểm
+441. International airport                              :    1 địa điểm
+442. Scrapbooking store                                 :    1 địa điểm
+443. Vegetable wholesale market                         :    1 địa điểm
+444. Travel lounge                                      :    1 địa điểm
+445. Motor vehicle dealer                               :    1 địa điểm
+446. Mechanic                                           :    1 địa điểm
+447. Insurance company                                  :    1 địa điểm
+448. Performing arts theater                            :    1 địa điểm
+449. Apartment rental agency                            :    1 địa điểm
+450. Holiday apartment rental                           :    1 địa điểm
+451. Cider bar                                          :    1 địa điểm
+452. Mexican restaurant                                 :    1 địa điểm
+453. Indian restaurant                                  :    1 địa điểm
+454. Halal restaurant                                   :    1 địa điểm
+455. Pakistani restaurant                               :    1 địa điểm
+456. Doner kebab restaurant                             :    1 địa điểm
+457. Archive                                            :    1 địa điểm
+458. Grocery delivery service                           :    1 địa điểm
+459. Science museum                                     :    1 địa điểm
+460. Bullring                                           :    1 địa điểm
+461. Padel court                                        :    1 địa điểm
+462. Business networking company                        :    1 địa điểm
+463. ATM                                                :    1 địa điểm
+464. Movie theater                                      :    1 địa điểm
+465. Shoe store                                         :    1 địa điểm
+466. Modern art museum                                  :    1 địa điểm
+467. Flamenco theater                                   :    1 địa điểm
+468. University                                         :    1 địa điểm
+469. Apostolic church                                   :    1 địa điểm
+470. Baptist church                                     :    1 địa điểm
+471. Dog day care center                                :    1 địa điểm
+472. Veterinarian                                       :    1 địa điểm
+473. Bus company                                        :    1 địa điểm
+474. E-commerce service                                 :    1 địa điểm
+475. Golf course                                        :    1 địa điểm
+476. Mine                                               :    1 địa điểm
+477. National forest                                    :    1 địa điểm
+478. Telecommunications equipment supplier              :    1 địa điểm
+479. Beverage distributor                               :    1 địa điểm
+480. Wedding planner                                    :    1 địa điểm
+481. Cat boarding service                               :    1 địa điểm
+482. Marine supply store                                :    1 địa điểm
+483. Pet adoption service                               :    1 địa điểm
+484. Pet boarding service                               :    1 địa điểm
+485. Pet sitter                                         :    1 địa điểm
+486. Veterinary pharmacy                                :    1 địa điểm
+487. Baby swimming school                               :    1 địa điểm
+488. Swim club                                          :    1 địa điểm
+489. Swimming pool supply store                         :    1 địa điểm
+490. Parking Garage                                     :    1 địa điểm
+491. Mobile Home Park                                   :    1 địa điểm
+492. Car Park                                           :    1 địa điểm
+493. Parking area for motorcycles                       :    1 địa điểm
+494. Art school                                         :    1 địa điểm
+495. Rehearsal studio                                   :    1 địa điểm
+496. Painting lessons                                   :    1 địa điểm
+497. Capsule hotel                                      :    1 địa điểm
+498. Country park                                       :    1 địa điểm
+499. Monument maker                                     :    1 địa điểm
+500. Garden furniture shop                              :    1 địa điểm
+501. Outdoor furniture store                            :    1 địa điểm
+502. Dim sum restaurant                                 :    1 địa điểm
+503. City government office                             :    1 địa điểm
+504. Historical place museum                            :    1 địa điểm
+505. Raw food restaurant                                :    1 địa điểm
+506. Seafood farm                                       :    1 địa điểm
+507. Shrimp farm                                        :    1 địa điểm
+508. Candy store                                        :    1 địa điểm
+509. Catering food and drink supplier                   :    1 địa điểm
+510. Soft drinks shop                                   :    1 địa điểm
+511. Wedding bakery                                     :    1 địa điểm
+512. Yoga retreat center                                :    1 địa điểm
+513. Second hand store                                  :    1 địa điểm
+514. Computer store                                     :    1 địa điểm
+515. Gold dealer                                        :    1 địa điểm
+516. Jewelry appraiser                                  :    1 địa điểm
+517. Jewelry buyer                                      :    1 địa điểm
+518. Jewelry store                                      :    1 địa điểm
+519. Summer camp organizer                              :    1 địa điểm
+520. Theme park                                         :    1 địa điểm
+521. Automobile storage facility                        :    1 địa điểm
+522. Facial spa                                         :    1 địa điểm
+523. Hair removal service                               :    1 địa điểm
+524. Massage therapist                                  :    1 địa điểm
+525. Nail salon                                         :    1 địa điểm
+526. Waxing hair removal service                        :    1 địa điểm
+527. Cheese shop                                        :    1 địa điểm
+528. Chocolate shop                                     :    1 địa điểm
+
+================================================================================
+✅ Tổng cộng: 528 loại địa điểm
