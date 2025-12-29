@@ -91,7 +91,12 @@ def _query_locations_within_radius(
         
     Returns:
         List các địa điểm tìm thấy với thông tin:
-        - id, poi_type, distance_meters, lat, lon
+        - id: ID của POI
+        - name: Tên địa điểm
+        - poi_type: Loại POI
+        - address: Địa chỉ
+        - distance_meters: Khoảng cách (mét)
+        - lat, lon: Tọa độ
     """
     # Tạo point từ lat/lon
     point_wkt = f"POINT({longitude} {latitude})"
@@ -99,8 +104,9 @@ def _query_locations_within_radius(
     # Query địa điểm trong bán kính
     query = """
         SELECT 
+            id,
             name,
-            type,
+            poi_type,
             address,
             ST_Distance(
                 geom::geography,
@@ -126,12 +132,13 @@ def _query_locations_within_radius(
     # Convert sang list of dict
     return [
         {
-            "name": row[0],
-            "type": row[1],
-            "address": row[2],
-            "distance_meters": round(row[3], 2),
-            "lat": row[4],
-            "lon": row[5]
+            "id": row[0],
+            "name": row[1],
+            "poi_type": row[2],
+            "address": row[3],
+            "distance_meters": round(row[4], 2),
+            "lat": row[5],
+            "lon": row[6]
         }
         for row in rows
     ]

@@ -43,7 +43,13 @@ class LocationService:
             - center: tọa độ trung tâm
             - radius_used: bán kính cuối cùng đã dùng (mét)
             - total_results: số lượng điểm tìm thấy
-            - results: danh sách các điểm (id, poi_type, distance_meters, lat, lon)
+            - results: danh sách các điểm với các trường:
+                * id: ID của POI
+                * name: Tên địa điểm  
+                * poi_type: Loại POI
+                * address: Địa chỉ
+                * distance_meters: Khoảng cách (mét)
+                * lat, lon: Tọa độ
         """
         # Validate transportation mode
         if not Config.validate_transportation_mode(transportation_mode):
