@@ -26,6 +26,20 @@ class Config:
     DB_USER = os.getenv("DB_USER", "postgres")
     DB_PASSWORD = os.getenv("DB_PASSWORD", "")
     
+    # Document Processing Configuration
+    CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))
+    CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
+    
+    # Embedding Model Configuration
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
+    EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "32"))
+    
+    # Qdrant Vector Store Configuration
+    VECTOR_DIMENSION = int(os.getenv("VECTOR_DIMENSION", "1024"))  # E5-large: 1024, E5-base: 768
+    QDRANT_COLLECTION_NAME = os.getenv("QDRANT_COLLECTION_NAME", "location_pois")
+    QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
+    QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
+    
     # Location Search Configuration
     TOP_K_RESULTS = 10  # Số lượng điểm gần nhất trả về
     
@@ -105,4 +119,10 @@ class Config:
             raise ValueError("DB_NAME not found in environment variables")
         if not cls.DB_USER:
             raise ValueError("DB_USER not found in environment variables")
-        return True 
+        
+        # Validate Qdrant Config (if URL is provided)
+        if cls.QDRANT_URL and not cls.QDRANT_URL.startswith("http"):
+            raise ValueError("QDRANT_URL must be a valid URL starting with http/https")
+            
+        return True
+```
