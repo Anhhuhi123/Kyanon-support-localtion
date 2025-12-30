@@ -48,29 +48,29 @@ class Config:
     # Cấu hình bán kính tìm kiếm cho từng phương tiện di chuyển
     TRANSPORTATION_CONFIG: Dict[str, Dict[str, int]] = {
         TransportationMode.WALKING: {
-            "min_radius": 0,      # 500m
-            "max_radius": 5000,     # 5000m (5km) - tăng để tìm đủ 50 địa điểm
-            "step": 500              # Tăng 500m mỗi lần
+            "min_radius": 0,      
+            "max_radius": 5000,     # 7000m (7km) - tăng để tìm đủ 50 địa điểm
+            "step": 1000              # Tăng 1000m mỗi lần
         },
         TransportationMode.BICYCLING: {
-            "min_radius": 0,     # 2000m (2km)
+            "min_radius": 0,     
             "max_radius": 15000,     # 15000m (15km)
-            "step": 5000             # Tăng 1000m mỗi lần (was 5m)
+            "step": 5000             # Tăng 5000m mỗi lần (was 5m)
         },
         TransportationMode.TRANSIT: {
-            "min_radius": 0,     # 2000m (2km)
-            "max_radius": 30000,    # 20000m (20km)
-            "step": 10000             # Tăng 4000m mỗi lần (was 10m)
+            "min_radius": 0,     
+            "max_radius": 30000,    # 30000m (30km)
+            "step": 10000             # Tăng 10000m mỗi lần (was 10m)
         },
         TransportationMode.FLEXIBLE: {
-            "min_radius": 0,     # 2000m (2km)
-            "max_radius": 20000,    # 20000m (20km)
-            "step": 5000             # Tăng 5000m mỗi lần (was 10m)
+            "min_radius": 0,     
+            "max_radius": 40000,    # 40000m (40km)
+            "step": 15000             # Tăng 15000m mỗi lần (was 10m)
         },
         TransportationMode.DRIVING: {
-            "min_radius": 0,     # 2000m (2km)
-            "max_radius": 30000,    # 30000m (30km)
-            "step": 10000             # Tăng 5000m mỗi lần (was 10m)
+            "min_radius": 0,     
+            "max_radius": 70000,    # 70000m (70km)
+            "step": 20000             # Tăng 20000m mỗi lần (was 10m)
         }
     }
     

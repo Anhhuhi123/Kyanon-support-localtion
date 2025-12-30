@@ -5,10 +5,11 @@ Kết hợp với filter theo danh sách ID từ PostGIS
 """
 
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from retrieval.qdrant_vector_store import QdrantVectorStore
 from retrieval.embeddings import EmbeddingGenerator
 from qdrant_client.models import Filter, FieldCondition, MatchAny
+from Logic.Route import RouteBuilder
 
 
 class SemanticSearchService:
@@ -18,6 +19,7 @@ class SemanticSearchService:
         """Khởi tạo service với Qdrant và Embedding generator"""
         self.vector_store = QdrantVectorStore()
         self.embedder = EmbeddingGenerator()
+        self.route_builder = RouteBuilder()
     
     def search_by_query(self, query: str, top_k: int = 10) -> Dict[str, Any]:
         """
@@ -301,4 +303,115 @@ class SemanticSearchService:
                 "status": "error",
                 "error": str(e),
                 "results": []
+            }
+    
+    def search_combined_with_routes(
+        self,
+        latitude: float,
+        longitude: float,
+        transportation_mode: str,
+        semantic_query: str,
+        max_time_minutes: int = 180,
+        target_places: int = 5,
+        max_routes: int = 3,
+        top_k_semantic: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Tìm kiếm kết hợp + Xây dựng lộ trình
+        
+        Workflow:
+        1. Spatial search (PostGIS) → TẤT CẢ địa điểm gần (>= 50)
+        2. Semantic search (Qdrant) → Top 10 địa điểm phù hợp nhất
+        3. Route building (Greedy) → Top 3 lộ trình tốt nhất
+        
+        Args:
+            latitude: Vĩ độ user
+            longitude: Kinh độ user
+            transportation_mode: Phương tiện di chuyển
+            semantic_query: Query ngữ nghĩa
+            max_time_minutes: Thời gian tối đa (phút)
+            target_places: Số địa điểm mỗi lộ trình
+            max_routes: Số lộ trình tối đa
+            top_k_semantic: Số địa điểm từ semantic search
+            
+        Returns:
+            Dict chứa routes (top 3 lộ trình) và metadata
+        """
+        try:
+            total_start = time.time()
+            
+            # 1. Spatial + Semantic search
+            search_result = self.search_combined(
+                latitude=latitude,
+                longitude=longitude,
+                transportation_mode=transportation_mode,
+                semantic_query=semantic_query,
+                top_k_semantic=top_k_semantic
+            )
+            
+            if search_result["status"] != "success":
+                return {
+                    "status": "error",
+                    "error": "Search failed",
+                    "search_error": search_result.get("error"),
+                    "routes": []
+                }
+            
+            semantic_places = search_result.get("results", [])
+            
+            if not semantic_places:
+                return {
+                    "status": "success",
+                    "message": "No places found",
+                    "query": semantic_query,
+                    "spatial_info": search_result.get("spatial_info", {}),
+                    "routes": []
+                }
+            
+            # 2. Xây dựng lộ trình
+            print(f"\n🔍 Step 3: Building routes from {len(semantic_places)} places...")
+            route_start = time.time()
+            
+            user_location = (latitude, longitude)
+            routes = self.route_builder.build_routes(
+                user_location=user_location,
+                places=semantic_places,
+                transportation_mode=transportation_mode,
+                max_time_minutes=max_time_minutes,
+                target_places=target_places,
+                max_routes=max_routes
+            )
+            
+            route_time = time.time() - route_start
+            total_time = time.time() - total_start
+            
+            print(f"⏱️  Route building: {route_time:.3f}s")
+            print(f"⏱️  Total execution time: {total_time:.3f}s")
+            print(f"✅ Generated {len(routes)} route(s)")
+            
+            return {
+                "status": "success",
+                "query": semantic_query,
+                "user_location": {
+                    "latitude": latitude,
+                    "longitude": longitude
+                },
+                "spatial_info": search_result.get("spatial_info", {}),
+                "semantic_places_count": len(semantic_places),
+                "total_execution_time_seconds": round(total_time, 3),
+                "timing_breakdown": {
+                    "search_seconds": round(search_result.get("total_execution_time_seconds", 0), 3),
+                    "route_building_seconds": round(route_time, 3)
+                },
+                "routes": routes
+            }
+            
+        except Exception as e:
+            import traceback
+            print(f"❌ Error in search_combined_with_routes: {str(e)}")
+            print(traceback.format_exc())
+            return {
+                "status": "error",
+                "error": str(e),
+                "routes": []
             }

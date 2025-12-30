@@ -58,6 +58,7 @@ async def root():
             "spatial_search": "/api/v1/locations/search",
             "semantic_search": "/api/v1/semantic/search",
             "combined_search": "/api/v1/semantic/combined",
+            "route_search": "/api/v1/semantic/routes",
             "health": "/health",
             "docs": "/docs"
         }
