@@ -51,7 +51,7 @@ pip install fastapi uvicorn psycopg2 python-dotenv pydantic
 # Tạo file .env
 DB_HOST=localhost
 DB_PORT=5432
-DB_NAME=demo_p2
+DB_NAME=demo_p3
 DB_USER=postgres
 DB_PASSWORD=your_password
 ```

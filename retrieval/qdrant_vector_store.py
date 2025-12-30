@@ -71,6 +71,15 @@ class QdrantVectorStore:
             )
             print(f"Created new Qdrant collection '{self.collection_name}' with dimension {self.dimension}")
             
+            # Tạo payload index cho field "id" để có thể filter
+            from qdrant_client.models import PayloadSchemaType
+            self.client.create_payload_index(
+                collection_name=self.collection_name,
+                field_name="id",
+                field_schema=PayloadSchemaType.KEYWORD
+            )
+            print(f"✓ Created payload index for 'id' field")
+            
         except Exception as e:
             print(f"Error creating collection: {e}")
             raise
@@ -102,16 +111,10 @@ class QdrantVectorStore:
                 points = []
                 for i, (embedding, text) in enumerate(zip(batch_embeddings, batch_texts)):
                     point_id = str(uuid.uuid4())
-                    
-                    payload = {
-                        "text": text,
-                        "index": len(self.texts) + batch_start + i
-                    }
-                    
+                    payload = {"text": text}
                     # Add metadata if provided
                     if batch_metadata and i < len(batch_metadata):
                         payload.update(batch_metadata[i])
-                    
                     points.append(
                         PointStruct(
                             id=point_id,
@@ -156,32 +159,49 @@ class QdrantVectorStore:
             print(f"Error adding embeddings to Qdrant: {e}")
             raise
     
-    def search(self, query_embedding: np.ndarray, k: int = Config.TOP_K_RESULTS) -> Tuple[List[str], List[float]]:
+    def search(self, query_embedding: np.ndarray, k: int = Config.TOP_K_RESULTS, query_filter=None):
         """
         Search for similar embeddings in Qdrant
         
         Args:
             query_embedding: query embedding vector
             k: number of top results to return
+            query_filter: optional Qdrant filter to apply
             
         Returns:
-            tuple of (similar_texts, similarity_scores)
+            tuple of (similar_texts, similarity_scores) or list of search results if filter is used
         """
         try:
             # Get collection info to check if it has data
             collection_info = self.client.get_collection(collection_name=self.collection_name)
             if collection_info.points_count == 0:
+                if query_filter is not None:
+                    return []
                 return [], []
             
             # Convert to list for Qdrant
             query_vector = query_embedding.astype('float32').tolist()
             
-            # Search in Qdrant
-            search_results = self.client.search(
-                collection_name=self.collection_name,
-                query_vector=query_vector,
-                limit=k
-            )
+            # Search in Qdrant với hoặc không có filter
+            if query_filter is not None:
+                from qdrant_client.http import models
+                search_results = self.client.query_points(
+                    collection_name=self.collection_name,
+                    query=query_vector,
+                    query_filter=query_filter,
+                    limit=k
+                ).points
+            else:
+                from qdrant_client.http import models
+                search_results = self.client.query_points(
+                    collection_name=self.collection_name,
+                    query=query_vector,
+                    limit=k
+                ).points
+            
+            # If filter is used, return full results for custom processing
+            if query_filter is not None:
+                return search_results
             
             # Extract texts and scores
             similar_texts = [hit.payload["text"] for hit in search_results]
@@ -191,6 +211,8 @@ class QdrantVectorStore:
             
         except Exception as e:
             print(f"Error searching in Qdrant: {e}")
+            if query_filter is not None:
+                return []
             return [], []
     
     def save_index(self, filepath: str = None):
