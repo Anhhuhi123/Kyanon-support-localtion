@@ -23,6 +23,26 @@ app = FastAPI(
     version="1.0.0"
 )
 
+
+# Startup event: Khởi tạo services 1 lần (singleton pattern)
+@app.on_event("startup")
+async def startup_event():
+    """
+    Khởi tạo services khi server startup để:
+    - Giữ kết nối Qdrant
+    - Load model 1 lần duy nhất
+    - Tăng tốc độ response
+    """
+    print("🚀 Initializing services...")
+    # Import ở đây để đảm bảo chỉ init 1 lần
+    from Service.semantic_search_service import SemanticSearchService
+    import Router.v1.semantic_api as semantic_api_module
+    
+    # Khởi tạo service (sẽ connect Qdrant và load model)
+    semantic_api_module._semantic_service_instance = SemanticSearchService()
+    print("✅ Services initialized and ready!")
+
+
 # Include routers
 app.include_router(location_router)
 app.include_router(semantic_router)

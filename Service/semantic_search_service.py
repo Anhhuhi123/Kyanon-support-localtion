@@ -4,7 +4,8 @@ Service xử lý logic tìm kiếm ngữ nghĩa (semantic search) với vector e
 Kết hợp với filter theo danh sách ID từ PostGIS
 """
 
-from typing import List, Dict, Any
+import time
+from typing import List, Dict, Any, Optional
 from retrieval.qdrant_vector_store import QdrantVectorStore
 from retrieval.embeddings import EmbeddingGenerator
 from qdrant_client.models import Filter, FieldCondition, MatchAny
@@ -18,18 +19,12 @@ class SemanticSearchService:
         self.vector_store = QdrantVectorStore()
         self.embedder = EmbeddingGenerator()
     
-    def search_by_query_with_filter(
-        self,
-        query: str,
-        id_list: List[str],
-        top_k: int = 10
-    ) -> Dict[str, Any]:
+    def search_by_query(self, query: str, top_k: int = 10) -> Dict[str, Any]:
         """
-        Tìm kiếm địa điểm theo query ngữ nghĩa, chỉ trong danh sách ID cho trước
+        Tìm kiếm địa điểm theo query ngữ nghĩa (không filter ID)
         
         Args:
             query: Câu query tìm kiếm (vd: "Travel", "Nature & View")
-            id_list: Danh sách ID của các địa điểm cần tìm kiếm (từ PostGIS)
             top_k: Số lượng kết quả trả về tối đa
             
         Returns:
@@ -37,10 +32,104 @@ class SemanticSearchService:
             - status: "success" hoặc "error"
             - query: query đã tìm kiếm
             - total_results: số lượng kết quả
+            - execution_time_seconds: thời gian thực thi
             - results: danh sách địa điểm với score tương đồng
         """
         try:
-            # Kiểm tra danh sách ID
+            # Đo thời gian
+            start_time = time.time()
+            
+            # 1. Sinh embedding cho query
+            print(f"Generating embedding for query: {query}")
+            embed_start = time.time()
+            query_embedding = self.embedder.generate_single_embedding(query)
+            embed_time = time.time() - embed_start
+            
+            # 2. Tìm kiếm trong Qdrant (không filter)
+            print(f"Searching in Qdrant for top {top_k} results...")
+            search_start = time.time()
+            search_results = self.vector_store.search(
+                query_embedding=query_embedding,
+                k=top_k,
+                query_filter=None
+            )
+            search_time = time.time() - search_start
+            
+            total_time = time.time() - start_time
+            print(f"⏱️  search_by_query executed in {total_time:.3f}s (Embed: {embed_time:.3f}s + Search: {search_time:.3f}s)")
+            print(f"Search returned {len(search_results) if search_results else 0} results")
+            
+            # Kiểm tra nếu kết quả rỗng hoặc không hợp lệ
+            if not search_results or not isinstance(search_results, list):
+                print("⚠️ No results found or invalid search results")
+                return {
+                    "status": "success",
+                    "query": query,
+                    "total_results": 0,
+                    "execution_time_seconds": round(total_time, 3),
+                    "timing_breakdown": {
+                        "embedding_seconds": round(embed_time, 3),
+                        "search_seconds": round(search_time, 3)
+                    },
+                    "results": []
+                }
+            
+            # 3. Format kết quả
+            results = []
+            for hit in search_results:
+                result = {
+                    "score": hit.score,
+                    "id": hit.payload.get("id"),
+                    "name": hit.payload.get("name"),
+                    "poi_type": hit.payload.get("poi_type"),
+                    "address": hit.payload.get("address"),
+                    "lat": hit.payload.get("lat"),
+                    "lon": hit.payload.get("long"),
+                    "text": hit.payload.get("text")
+                }
+                results.append(result)
+            
+            return {
+                "status": "success",
+                "query": query,
+                "total_results": len(results),
+                "execution_time_seconds": round(total_time, 3),
+                "timing_breakdown": {
+                    "embedding_seconds": round(embed_time, 3),
+                    "search_seconds": round(search_time, 3)
+                },
+                "results": results
+            }
+            
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e),
+                "query": query,
+                "total_results": 0,
+                "results": []
+            }
+    
+    def search_by_query_with_filter(
+        self,
+        query: str,
+        id_list: List[str],
+        top_k: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Tìm kiếm địa điểm theo query ngữ nghĩa với filter ID (dùng cho combined search)
+        
+        Args:
+            query: Câu query tìm kiếm
+            id_list: Danh sách ID cần filter
+            top_k: Số lượng kết quả
+            
+        Returns:
+            Dict chứa kết quả
+        """
+        try:
+            start_time = time.time()
+            
             if not id_list or len(id_list) == 0:
                 return {
                     "status": "error",
@@ -50,12 +139,10 @@ class SemanticSearchService:
                     "results": []
                 }
             
-            # 1. Sinh embedding cho query
             print(f"Generating embedding for query: {query}")
             query_embedding = self.embedder.generate_single_embedding(query)
             
-            # 2. Tạo filter để chỉ tìm trong danh sách ID
-            print(f"Creating filter for {len(id_list)} IDs: {id_list[:3]}...")  # Show first 3 IDs
+            print(f"Creating filter for {len(id_list)} IDs...")
             id_filter = Filter(
                 must=[
                     FieldCondition(
@@ -65,28 +152,26 @@ class SemanticSearchService:
                 ]
             )
             
-            # 3. Tìm kiếm trong Qdrant với filter
-            print(f"Searching in Qdrant with {len(id_list)} IDs filter...")
+            print(f"Searching in Qdrant with ID filter...")
             search_results = self.vector_store.search(
                 query_embedding=query_embedding,
                 k=top_k,
                 query_filter=id_filter
             )
             
-            print(f"Search returned {len(search_results) if search_results else 0} results")
+            execution_time = time.time() - start_time
+            print(f"⏱️  search_by_query_with_filter executed in {execution_time:.3f}s")
             
-            # Kiểm tra nếu kết quả rỗng hoặc không hợp lệ
             if not search_results or not isinstance(search_results, list):
-                print("⚠️ No results found or invalid search results")
                 return {
                     "status": "success",
                     "query": query,
                     "filter_ids_count": len(id_list),
                     "total_results": 0,
+                    "execution_time_seconds": round(execution_time, 3),
                     "results": []
                 }
             
-            # 4. Format kết quả
             results = []
             for hit in search_results:
                 result = {
@@ -106,6 +191,7 @@ class SemanticSearchService:
                 "query": query,
                 "filter_ids_count": len(id_list),
                 "total_results": len(results),
+                "execution_time_seconds": round(execution_time, 3),
                 "results": results
             }
             
@@ -124,39 +210,40 @@ class SemanticSearchService:
         longitude: float,
         transportation_mode: str,
         semantic_query: str,
-        top_k_spatial: int = 50,
         top_k_semantic: int = 10
     ) -> Dict[str, Any]:
         """
         Tìm kiếm kết hợp: Spatial search (PostGIS) + Semantic search (Qdrant)
         
         Workflow:
-        1. Tìm kiếm địa điểm gần theo tọa độ và phương tiện (PostGIS)
+        1. Tìm kiếm TẤT CẢ địa điểm gần (>= 50) theo tọa độ và phương tiện (PostGIS)
         2. Lấy danh sách ID từ kết quả bước 1
-        3. Tìm kiếm semantic trong danh sách ID đó (Qdrant)
+        3. Tìm kiếm semantic trong danh sách ID đó, trả về top_k_semantic kết quả có similarity cao nhất
         
         Args:
             latitude: Vĩ độ
             longitude: Kinh độ
             transportation_mode: Phương tiện di chuyển
             semantic_query: Query ngữ nghĩa (vd: "Travel", "Nature & View")
-            top_k_spatial: Số lượng kết quả spatial search
-            top_k_semantic: Số lượng kết quả semantic cuối cùng
+            top_k_semantic: Số lượng kết quả semantic cuối cùng (mặc định 10)
             
         Returns:
-            Dict chứa kết quả kết hợp
+            Dict chứa CHỈ top_k_semantic địa điểm có similarity cao nhất
         """
         from Service.location_service import LocationService
         from config.config import Config
         
         try:
+            # Đo tổng thời gian
+            total_start = time.time()
+            
             # 1. Tìm kiếm spatial
+            print(f"\n🔍 Step 1: Spatial search...")
             location_service = LocationService(Config.get_db_connection_string())
             spatial_results = location_service.find_nearest_locations(
                 latitude=latitude,
                 longitude=longitude,
-                transportation_mode=transportation_mode,
-                top_k=top_k_spatial
+                transportation_mode=transportation_mode
             )
             
             if spatial_results["status"] != "success":
@@ -174,26 +261,39 @@ class SemanticSearchService:
                 return {
                     "status": "success",
                     "message": "No locations found in spatial search",
-                    "spatial_results": spatial_results,
-                    "semantic_results": {
-                        "status": "success",
-                        "query": semantic_query,
-                        "total_results": 0,
-                        "results": []
-                    }
+                    "query": semantic_query,
+                    "spatial_info": {
+                        "radius_used": spatial_results.get("radius_used"),
+                        "total_spatial_locations": 0
+                    },
+                    "total_results": 0,
+                    "results": []
                 }
             
             # 3. Tìm kiếm semantic trong danh sách ID
+            print(f"\n🔍 Step 2: Semantic search in {len(id_list)} locations...")
             semantic_results = self.search_by_query_with_filter(
                 query=semantic_query,
                 id_list=id_list,
                 top_k=top_k_semantic
             )
             
+            total_time = time.time() - total_start
+            print(f"\n⏱️  search_combined total execution time: {total_time:.3f}s")
+            
+            # Trả về CHỈ semantic results (top_k_semantic địa điểm có similarity cao nhất)
             return {
                 "status": "success",
-                "spatial_results": spatial_results,
-                "semantic_results": semantic_results
+                "query": semantic_query,
+                "spatial_info": {
+                    "transportation_mode": spatial_results.get("transportation_mode"),
+                    "radius_used": spatial_results.get("radius_used"),
+                    "total_spatial_locations": len(id_list),
+                    "spatial_execution_time": spatial_results.get("execution_time_seconds")
+                },
+                "total_results": semantic_results.get("total_results", 0),
+                "total_execution_time_seconds": round(total_time, 3),
+                "results": semantic_results.get("results", [])
             }
             
         except Exception as e:

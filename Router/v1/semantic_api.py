@@ -15,15 +15,24 @@ from Service.semantic_search_service import SemanticSearchService
 # Initialize router
 router = APIRouter(prefix="/api/v1/semantic", tags=["Semantic Search (Qdrant)"])
 
-# Initialize service
-semantic_service = SemanticSearchService()
+# Service instance sẽ được set từ api_server.py startup event
+_semantic_service_instance = None
+
+
+def get_semantic_service():
+    """Lấy singleton instance của SemanticSearchService"""
+    global _semantic_service_instance
+    if _semantic_service_instance is None:
+        # Fallback: nếu chưa init từ startup, init ngay
+        from Service.semantic_search_service import SemanticSearchService
+        _semantic_service_instance = SemanticSearchService()
+    return _semantic_service_instance
 
 
 # Request Models
 class SemanticSearchRequest(BaseModel):
-    """Request model cho tìm kiếm ngữ nghĩa với filter ID"""
+    """Request model cho tìm kiếm ngữ nghĩa (không cần filter ID)"""
     query: str = Field(..., description="Câu query tìm kiếm ngữ nghĩa", json_schema_extra={"example": "Travel"})
-    id_list: List[str] = Field(..., description="Danh sách ID cần filter", json_schema_extra={"example": ["0f9d2009-9436-46a4-b354-b0261898a39e"]})
     top_k: Optional[int] = Field(10, description="Số lượng kết quả", json_schema_extra={"example": 10})
 
 
@@ -33,27 +42,24 @@ class CombinedSearchRequest(BaseModel):
     longitude: float = Field(..., description="Kinh độ", json_schema_extra={"example": 106.7737852})
     transportation_mode: str = Field(..., description="Phương tiện (WALKING/BICYCLING/TRANSIT/FLEXIBLE/DRIVING)", json_schema_extra={"example": "WALKING"})
     semantic_query: str = Field(..., description="Câu query ngữ nghĩa", json_schema_extra={"example": "Travel"})
-    top_k_spatial: Optional[int] = Field(50, description="Số lượng kết quả spatial", json_schema_extra={"example": 50})
-    top_k_semantic: Optional[int] = Field(10, description="Số lượng kết quả semantic cuối cùng", json_schema_extra={"example": 10})
+    top_k: Optional[int] = Field(10, description="Số lượng kết quả semantic cuối cùng", json_schema_extra={"example": 10})
 
 
 @router.post("/search")
 async def semantic_search(request: SemanticSearchRequest):
     """
-    Tìm kiếm địa điểm theo ngữ nghĩa với filter danh sách ID
+    Tìm kiếm địa điểm theo ngữ nghĩa (không cần filter ID)
     
     Args:
         query: Câu query tìm kiếm (vd: "Travel", "Nature & View")
-        id_list: Danh sách ID cần tìm kiếm (từ PostGIS hoặc nguồn khác)
         top_k: Số lượng kết quả trả về
     
     Returns:
         JSON response với danh sách địa điểm phù hợp nhất với query
     """
     try:
-        result = semantic_service.search_by_query_with_filter(
+        result = get_semantic_service().search_by_query(
             query=request.query,
-            id_list=request.id_list,
             top_k=request.top_k
         )
         
@@ -74,29 +80,27 @@ async def combined_search(request: CombinedSearchRequest):
     Tìm kiếm kết hợp: Spatial (PostGIS) + Semantic (Qdrant)
     
     Workflow:
-    1. Tìm kiếm địa điểm gần theo tọa độ và phương tiện
-    2. Lấy danh sách ID từ kết quả
-    3. Tìm kiếm semantic trong danh sách ID đó
+    1. Tìm kiếm TẤT CẢ địa điểm gần (>= 50) theo tọa độ và phương tiện
+    2. Lấy danh sách ID từ kết quả spatial
+    3. Tìm kiếm semantic trong danh sách ID đó, trả về top_k kết quả có similarity cao nhất
     
     Args:
         latitude: Vĩ độ
         longitude: Kinh độ
         transportation_mode: Phương tiện
         semantic_query: Query ngữ nghĩa
-        top_k_spatial: Số lượng kết quả spatial
-        top_k_semantic: Số lượng kết quả semantic cuối cùng
+        top_k: Số lượng kết quả semantic cuối cùng (mặc định 10)
     
     Returns:
-        JSON response với kết quả spatial và semantic
+        JSON response CHỈ với top_k địa điểm có similarity cao nhất
     """
     try:
-        result = semantic_service.search_combined(
+        result = get_semantic_service().search_combined(
             latitude=request.latitude,
             longitude=request.longitude,
             transportation_mode=request.transportation_mode,
             semantic_query=request.semantic_query,
-            top_k_spatial=request.top_k_spatial,
-            top_k_semantic=request.top_k_semantic
+            top_k_semantic=request.top_k
         )
         
         if result["status"] == "error":

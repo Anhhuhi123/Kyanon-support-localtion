@@ -12,14 +12,13 @@ def search_locations(
     db_connection_string: str,
     latitude: float,
     longitude: float,
-    transportation_mode: str,
-    limit: int = 10
+    transportation_mode: str
 ) -> Tuple[List[Dict[str, Any]], int]:
     """
-    Tìm kiếm địa điểm với bán kính tự động tăng dần theo phương tiện
+    Tìm kiếm TẤT CẢ địa điểm trong bán kính tăng dần cho đến khi >= 50 điểm
     
     Bắt đầu từ min_radius, tăng dần theo step cho đến khi:
-    - Tìm đủ limit địa điểm, HOẶC
+    - Tìm được ít nhất 50 địa điểm, HOẶC
     - Đạt max_radius
     
     Args:
@@ -27,11 +26,10 @@ def search_locations(
         latitude: Vĩ độ điểm trung tâm
         longitude: Kinh độ điểm trung tâm
         transportation_mode: Phương tiện (WALKING, BICYCLING, etc.)
-        limit: Số lượng kết quả tối đa trả về
         
     Returns:
         Tuple (results, final_radius):
-        - results: List các địa điểm tìm thấy
+        - results: List TẤT CẢ các địa điểm trong bán kính (>= 50 nếu có đủ)
         - final_radius: Bán kính cuối cùng đã sử dụng
     """
     # Lấy config cho transportation mode
@@ -39,6 +37,8 @@ def search_locations(
     min_radius = config["min_radius"]
     max_radius = config["max_radius"]
     step = config["step"]
+    
+    MIN_REQUIRED_RESULTS = 50  # Số lượng tối thiểu phải tìm được
     
     current_radius = min_radius
     results = []
@@ -48,22 +48,28 @@ def search_locations(
     cursor = conn.cursor()
     
     try:
-        # Tăng dần bán kính cho đến khi tìm đủ hoặc đạt max
+        # Tăng dần bán kính cho đến khi có >= 50 điểm hoặc đạt max
         while current_radius <= max_radius:
             results = _query_locations_within_radius(
                 cursor=cursor,
                 latitude=latitude,
                 longitude=longitude,
-                radius_meters=current_radius,
-                limit=limit
+                radius_meters=current_radius
             )
             
-            # Nếu đã tìm đủ limit kết quả thì dừng
-            if len(results) >= limit:
+            # Nếu đã tìm được >= 50 kết quả thì dừng
+            if len(results) >= MIN_REQUIRED_RESULTS:
+                print(f"Found {len(results)} locations (target: >= {MIN_REQUIRED_RESULTS}), stopping at radius {current_radius}m")
                 break
             
             # Tăng bán kính
+            print(f"Found {len(results)} locations (< {MIN_REQUIRED_RESULTS}), increasing radius to {current_radius + step}m")
             current_radius += step
+        
+        # Warning nếu đạt max mà chưa đủ
+        if len(results) < MIN_REQUIRED_RESULTS:
+            print(f"⚠️  WARNING: Reached max_radius ({max_radius}m) but only found {len(results)} locations (target: >= {MIN_REQUIRED_RESULTS})")
+            print(f"    Consider: 1) Increasing max_radius, 2) Check if database has enough data in this area")
         
         return results, current_radius
         
@@ -76,21 +82,19 @@ def _query_locations_within_radius(
     cursor,
     latitude: float,
     longitude: float,
-    radius_meters: int,
-    limit: int
+    radius_meters: int
 ) -> List[Dict[str, Any]]:
     """
-    Query địa điểm trong bán kính cụ thể (hàm nội bộ)
+    Query TẤT CẢ địa điểm trong bán kính cụ thể (hàm nội bộ)
     
     Args:
         cursor: Database cursor
         latitude: Vĩ độ điểm trung tâm
         longitude: Kinh độ điểm trung tâm
         radius_meters: Bán kính tìm kiếm (mét)
-        limit: Số lượng kết quả tối đa
         
     Returns:
-        List các địa điểm tìm thấy với thông tin:
+        List TẤT CẢ các địa điểm trong bán kính với thông tin:
         - id: ID của POI
         - name: Tên địa điểm
         - poi_type: Loại POI
@@ -101,7 +105,7 @@ def _query_locations_within_radius(
     # Tạo point từ lat/lon
     point_wkt = f"POINT({longitude} {latitude})"
     
-    # Query địa điểm trong bán kính
+    # Query TẤT CẢ địa điểm trong bán kính (không giới hạn LIMIT)
     query = """
         SELECT 
             id,
@@ -121,10 +125,9 @@ def _query_locations_within_radius(
             %s
         )
         ORDER BY distance_meters ASC
-        LIMIT %s
     """
     
-    params = [point_wkt, point_wkt, radius_meters, limit]
+    params = [point_wkt, point_wkt, radius_meters]
     
     cursor.execute(query, params)
     rows = cursor.fetchall()

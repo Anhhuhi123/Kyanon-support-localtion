@@ -22,33 +22,30 @@ location_service = LocationService(Config.get_db_connection_string())
 
 # Request Models
 class LocationSearchRequest(BaseModel):
-    """Request model cho tìm kiếm địa điểm"""
+    """Request model cho tìm kiếm địa điểm (trả về TẤT CẢ địa điểm trong bán kính >= 50)"""
     latitude: float = Field(..., description="Vĩ độ", json_schema_extra={"example": 10.8294811})
     longitude: float = Field(..., description="Kinh độ", json_schema_extra={"example": 106.7737852})
     transportation_mode: str = Field(..., description="Phương tiện (WALKING/BICYCLING/TRANSIT/FLEXIBLE/DRIVING)", json_schema_extra={"example": "WALKING"})
-    top_k: Optional[int] = Field(None, description="Số lượng kết quả", json_schema_extra={"example": 10})
 
 
 @router.post("/search")
 async def search_locations(request: LocationSearchRequest):
     """
-    Tìm kiếm k điểm gần nhất xung quanh tọa độ theo phương tiện di chuyển
+    Tìm kiếm TẤT CẢ địa điểm gần nhất (>= 50) xung quanh tọa độ theo phương tiện di chuyển
     
     Args:
         latitude: Vĩ độ điểm trung tâm
         longitude: Kinh độ điểm trung tâm
         transportation_mode: Phương tiện (WALKING, BICYCLING, TRANSIT, FLEXIBLE, DRIVING)
-        top_k: Số lượng điểm muốn trả về (optional, mặc định từ config)
     
     Returns:
-        JSON response với danh sách địa điểm gần nhất
+        JSON response với danh sách TẤT CẢ địa điểm trong bán kính
     """
     try:
         result = location_service.find_nearest_locations(
             latitude=request.latitude,
             longitude=request.longitude,
-            transportation_mode=request.transportation_mode,
-            top_k=request.top_k
+            transportation_mode=request.transportation_mode
         )
         
         if result["status"] == "error":

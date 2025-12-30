@@ -31,7 +31,7 @@ class Config:
     CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
     
     # Embedding Model Configuration
-    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-large")
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
     EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "32"))
     
     # Qdrant configurations
@@ -48,29 +48,29 @@ class Config:
     # Cấu hình bán kính tìm kiếm cho từng phương tiện di chuyển
     TRANSPORTATION_CONFIG: Dict[str, Dict[str, int]] = {
         TransportationMode.WALKING: {
-            "min_radius": 500,      # 500m
-            "max_radius": 1000,     # 1000m (1km)
-            "step": 50              # Tăng 50m mỗi lần (was 1m - too slow!)
+            "min_radius": 0,      # 500m
+            "max_radius": 5000,     # 5000m (5km) - tăng để tìm đủ 50 địa điểm
+            "step": 500              # Tăng 500m mỗi lần
         },
         TransportationMode.BICYCLING: {
-            "min_radius": 2000,     # 2000m (2km)
-            "max_radius": 6000,     # 6000m (6km)
-            "step": 100             # Tăng 100m mỗi lần (was 5m)
+            "min_radius": 0,     # 2000m (2km)
+            "max_radius": 15000,     # 15000m (15km)
+            "step": 5000             # Tăng 1000m mỗi lần (was 5m)
         },
         TransportationMode.TRANSIT: {
-            "min_radius": 2000,     # 2000m (2km)
-            "max_radius": 15000,    # 15000m (15km)
-            "step": 200             # Tăng 200m mỗi lần (was 10m)
+            "min_radius": 0,     # 2000m (2km)
+            "max_radius": 30000,    # 20000m (20km)
+            "step": 10000             # Tăng 4000m mỗi lần (was 10m)
         },
         TransportationMode.FLEXIBLE: {
-            "min_radius": 2000,     # 2000m (2km)
+            "min_radius": 0,     # 2000m (2km)
             "max_radius": 20000,    # 20000m (20km)
-            "step": 200             # Tăng 200m mỗi lần (was 10m)
+            "step": 5000             # Tăng 5000m mỗi lần (was 10m)
         },
         TransportationMode.DRIVING: {
-            "min_radius": 2000,     # 2000m (2km)
-            "max_radius": 10000,    # 10000m (10km)
-            "step": 200             # Tăng 200m mỗi lần (was 10m)
+            "min_radius": 0,     # 2000m (2km)
+            "max_radius": 30000,    # 30000m (30km)
+            "step": 10000             # Tăng 5000m mỗi lần (was 10m)
         }
     }
     
