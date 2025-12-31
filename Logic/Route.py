@@ -452,15 +452,24 @@ class RouteBuilder:
         distance_matrix = self.build_distance_matrix(user_location, places)
         max_distance = max(max(row) for row in distance_matrix)
         
-        # Tìm địa điểm có SCORE thuần túy cao nhất (không quan tâm khoảng cách)
-        best_score_idx = 0
-        best_score = places[0]["score"]
+        # Tìm top 3 điểm xuất phát có combined_score cao nhất
+        first_candidates = []
         for i, place in enumerate(places):
-            if place["score"] > best_score:
-                best_score = place["score"]
-                best_score_idx = i
+            combined = self.calculate_combined_score(
+                place_idx=i,
+                current_pos=0,
+                places=places,
+                distance_matrix=distance_matrix,
+                max_distance=max_distance
+            )
+            first_candidates.append((i, combined))
         
-        print(f"🎯 Điểm đầu tiên BẮT BUỘC (score thuần túy cao nhất): {places[best_score_idx]['name']} (score={places[best_score_idx]['score']})")
+        first_candidates.sort(key=lambda x: x[1], reverse=True)
+        
+        # Lấy địa điểm có score cao nhất làm điểm đầu tiên BẮT BUỘC
+        best_first_place = first_candidates[0][0]  # Index của POI có score cao nhất
+        
+        print(f"🎯 Điểm đầu tiên BẮT BUỘC (score cao nhất): {places[best_first_place]['name']} (score={places[best_first_place]['score']})")
         
         # Xây dựng route đầu tiên từ điểm có score cao nhất
         route_1 = self.build_single_route_greedy(
@@ -469,7 +478,7 @@ class RouteBuilder:
             transportation_mode=transportation_mode,
             max_time_minutes=max_time_minutes,
             target_places=target_places,
-            first_place_idx=best_score_idx
+            first_place_idx=best_first_place
         )
         
         if route_1 is None:
@@ -478,21 +487,8 @@ class RouteBuilder:
         all_routes = [route_1]
         seen_place_sets = {tuple(sorted(route_1["route"]))}
         
-        # Nếu cần nhiều hơn 1 route, tính combined_score cho các điểm xuất phát khác
+        # Nếu cần nhiều hơn 1 route, thử các điểm xuất phát khác
         if max_routes > 1:
-            # Tính combined_score cho tất cả địa điểm (để chọn điểm xuất phát cho routes khác)
-            first_candidates = []
-            for i, place in enumerate(places):
-                combined = self.calculate_combined_score(
-                    place_idx=i,
-                    current_pos=0,
-                    places=places,
-                    distance_matrix=distance_matrix,
-                    max_distance=max_distance
-                )
-                first_candidates.append((i, combined))
-            
-            first_candidates.sort(key=lambda x: x[1], reverse=True)
             # Thử các điểm xuất phát khác (vẫn ưu tiên score cao)
             num_candidates_to_try = min(len(places), max(10, max_routes * 3))
             
