@@ -256,8 +256,9 @@ class SemanticSearchService:
                     "results": []
                 }
             
-            # 2. Lấy danh sách ID
-            id_list = [loc["id"] for loc in spatial_results["results"]]
+            # 2. Tạo map rating từ spatial results
+            rating_map = {loc["id"]: loc.get("rating", 0.5) for loc in spatial_results["results"]}
+            id_list = list(rating_map.keys())
             
             if not id_list:
                 return {
@@ -280,10 +281,14 @@ class SemanticSearchService:
                 top_k=top_k_semantic
             )
             
+            # 4. Merge rating từ spatial vào semantic results
+            for result in semantic_results.get("results", []):
+                result["rating"] = rating_map.get(result["id"], 0.5)
+            
             total_time = time.time() - total_start
             print(f"\n⏱️  search_combined total execution time: {total_time:.3f}s")
             
-            # Trả về CHỈ semantic results (top_k_semantic địa điểm có similarity cao nhất)
+            # Trả về CHỈ semantic results (top_k_semantic địa điểm có similarity cao nhất) + rating
             return {
                 "status": "success",
                 "query": semantic_query,

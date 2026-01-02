@@ -106,6 +106,7 @@ def _query_locations_within_radius(
     point_wkt = f"POINT({longitude} {latitude})"
     
     # Query TẤT CẢ địa điểm trong bán kính (không giới hạn LIMIT)
+    # Thêm normalize_stars_reviews (rating) vào kết quả
     query = """
         SELECT 
             id,
@@ -117,7 +118,8 @@ def _query_locations_within_radius(
                 ST_GeomFromText(%s, 4326)::geography
             ) AS distance_meters,
             lat,
-            long
+            long,
+            COALESCE(normalize_stars_reviews, 0.5) AS rating
         FROM poi_locations
         WHERE ST_DWithin(
             geom::geography,
@@ -132,7 +134,7 @@ def _query_locations_within_radius(
     cursor.execute(query, params)
     rows = cursor.fetchall()
     
-    # Convert sang list of dict
+    # Convert sang list of dict (thêm rating)
     return [
         {
             "id": row[0],
@@ -141,7 +143,8 @@ def _query_locations_within_radius(
             "address": row[3],
             "distance_meters": round(row[4], 2),
             "lat": row[5],
-            "lon": row[6]
+            "lon": row[6],
+            "rating": round(float(row[7] or 0.5), 3)
         }
         for row in rows
     ]

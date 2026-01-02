@@ -49,7 +49,7 @@ class Config:
     TRANSPORTATION_CONFIG: Dict[str, Dict[str, int]] = {
         TransportationMode.WALKING: {
             "min_radius": 0,      
-            "max_radius": 5000,     # 7000m (7km) - tăng để tìm đủ 50 địa điểm
+            "max_radius": 5000,     # 5000m (5km) - tăng để tìm đủ 50 địa điểm
             "step": 1000              # Tăng 1000m mỗi lần
         },
         TransportationMode.BICYCLING: {

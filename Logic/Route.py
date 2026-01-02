@@ -127,11 +127,18 @@ class RouteBuilder:
         places: List[Dict[str, Any]],
         distance_matrix: List[List[float]],
         max_distance: float,
-        score_weight: float = 0.7,
-        distance_weight: float = 0.3
+        is_first: bool = False,
+        is_last: bool = False
     ) -> float:
         """
-        Tính điểm kết hợp: score + khoảng cách
+        Tính điểm kết hợp: distance + similarity + rating
+        
+        Công thức:
+        - POI đầu: 0.2*distance + 0.4*similarity + 0.4*rating
+        - POI giữa: 
+          + Nếu similarity >= 0.8: 0.2*distance + 0.4*similarity + 0.4*rating
+          + Nếu similarity < 0.8:  0.3*distance + 0.3*similarity + 0.4*rating
+        - POI cuối: ưu tiên gần user (0.4*distance + 0.3*similarity + 0.3*rating)
         
         Args:
             place_idx: Index địa điểm cần tính (0-based trong places list)
@@ -139,26 +146,40 @@ class RouteBuilder:
             places: Danh sách địa điểm
             distance_matrix: Ma trận khoảng cách
             max_distance: Khoảng cách tối đa để normalize
-            score_weight: Trọng số cho score (mặc định 0.7)
-            distance_weight: Trọng số cho khoảng cách (mặc định 0.3)
+            is_first: Có phải POI đầu tiên không
+            is_last: Có phải POI cuối cùng không
             
         Returns:
             Combined score (cao hơn = tốt hơn)
         """
-        # Normalize score (0-1)
-        normalized_score = places[place_idx]["score"]
+        place = places[place_idx]
+        
+        # similarity (score từ Qdrant, đã normalize 0-1)
+        similarity = place["score"]
+        
+        # rating (normalize_stars_reviews từ DB, đã normalize 0-1)
+        rating = float(place.get("rating") or 0.5)
         
         # Khoảng cách từ current_pos đến place (index trong matrix = place_idx + 1)
-        distance = distance_matrix[current_pos][place_idx + 1]
+        distance_km = distance_matrix[current_pos][place_idx + 1]
         
-        # Normalize distance
-        normalized_distance = distance / max_distance if max_distance > 0 else 0
-        
-        # Distance score: gần = điểm cao (đảo ngược)
+        # Normalize distance (đảo ngược: gần = điểm cao)
+        normalized_distance = distance_km / max_distance if max_distance > 0 else 0
         distance_score = 1 - normalized_distance
         
-        # Kết hợp
-        combined = score_weight * normalized_score + distance_weight * distance_score
+        # Tính combined score theo công thức
+        if is_first:
+            # POI đầu: 0.2*distance + 0.4*similarity + 0.4*rating
+            combined = 0.1 * distance_score + 0.45 * similarity + 0.45 * rating
+        elif is_last:
+            # POI cuối: ưu tiên gần user
+            combined = 0.4 * distance_score + 0.3 * similarity + 0.3 * rating
+        else:
+            # POI giữa: phụ thuộc vào similarity
+            if similarity >= 0.8:
+                combined = 0.2 * distance_score + 0.5 * similarity + 0.3 * rating
+            else:
+                combined = 0.3 * distance_score + 0.1 * similarity + 0.4 * rating
         
         return combined
     
@@ -218,7 +239,8 @@ class RouteBuilder:
                     current_pos=0,
                     places=places,
                     distance_matrix=distance_matrix,
-                    max_distance=max_distance
+                    max_distance=max_distance,
+                    is_first=True
                 )
                 if combined > best_first_score:
                     best_first_score = combined
@@ -313,15 +335,14 @@ class RouteBuilder:
             if temp_travel + temp_stay + return_time > max_time_minutes:
                 continue
             
-            # Ưu tiên score hơn vì đã gần user
+            # POI cuối: ưu tiên gần user
             combined = self.calculate_combined_score(
                 place_idx=i,
                 current_pos=current_pos,
                 places=places,
                 distance_matrix=distance_matrix,
                 max_distance=max_distance,
-                score_weight=0.8,
-                distance_weight=0.2
+                is_last=True
             )
             
             if combined > best_last_score:
@@ -391,6 +412,19 @@ class RouteBuilder:
             )
             stay_time = self.get_stay_time(place.get("poi_type", ""))
             
+            # Tính combined score cho POI này
+            is_first_poi = (i == 0)
+            is_last_poi = (i == len(route) - 1)
+            combined_score = self.calculate_combined_score(
+                place_idx=place_idx,
+                current_pos=prev_pos,
+                places=places,
+                distance_matrix=distance_matrix,
+                max_distance=max_distance,
+                is_first=is_first_poi,
+                is_last=is_last_poi
+            )
+            
             route_places.append({
                 "place_id": place["id"],
                 "place_name": place["name"],
@@ -398,7 +432,9 @@ class RouteBuilder:
                 "address": place.get("address", ""),
                 "lat": place["lat"],
                 "lon": place["lon"],
-                "score": place["score"],
+                "similarity": round(place["score"], 3),
+                "rating": round(float(place.get("rating") or 0.5), 3),
+                "combined_score": round(combined_score, 3),
                 "travel_time_minutes": round(travel_time, 1),
                 "stay_time_minutes": stay_time
             })
