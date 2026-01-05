@@ -72,3 +72,12 @@ async def health():
         "status": "healthy",
         "service": "Location Search API"
     }
+        # Check Redis
+    try:
+        import redis
+        r = redis.Redis(host=Config.REDIS_HOST, port=Config.REDIS_PORT, db=Config.REDIS_DB)
+        r.ping()
+        health_status["checks"]["redis"] = "ok"
+    except Exception as e:
+        health_status["checks"]["redis"] = f"error: {str(e)}"
+        health_status["status"] = "degraded"

@@ -1,0 +1,47 @@
+version: '3.8'
+
+services:
+  # FastAPI Application
+  api:
+    build: .
+    container_name: kyanon-api
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_DB=0
+      # Thêm các biến môi trường khác nếu cần
+      # - DB_HOST=your_db_host
+      # - DB_PORT=5432
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      # Mount code để hot reload (quan trọng cho dev!)
+      - .:/app
+      # Tránh mount __pycache__ vào container
+      - /app/__pycache__
+    restart: unless-stopped
+    # Cho phép xem logs dễ dàng
+    stdin_open: true
+    tty: true
+
+  # Redis Service
+  redis:
+    image: redis:7-alpine
+    container_name: kyanon-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+volumes:
+  redis_data:
