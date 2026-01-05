@@ -1,25 +1,29 @@
 """
 Location Service
 Service layer xử lý logic nghiệp vụ cho tìm kiếm địa điểm theo tọa độ và phương tiện
+Sử dụng H3 + Redis cache để tối ưu performance
 """
 
 import time
 from typing import List, Dict, Any, Tuple
-from Logic.radius_search import search_locations
+from Logic.h3_radius_search import H3RadiusSearch
 from config.config import Config
 
 
 class LocationService:
-    """Service xử lý logic tìm kiếm địa điểm"""
+    """Service xử lý logic tìm kiếm địa điểm với H3 + Redis cache"""
     
-    def __init__(self, db_connection_string: str):
+    def __init__(self, db_connection_string: str, redis_host: str = "localhost", redis_port: int = 6379):
         """
-        Khởi tạo service với database connection string
+        Khởi tạo service với database và Redis connection
         
         Args:
             db_connection_string: PostgreSQL connection string
+            redis_host: Redis host
+            redis_port: Redis port
         """
         self.db_connection_string = db_connection_string
+        self.h3_search = H3RadiusSearch(db_connection_string, redis_host, redis_port)
     
     def find_nearest_locations(
         self,
@@ -62,16 +66,15 @@ class LocationService:
             # Đo thời gian thực thi
             start_time = time.time()
             
-            # Gọi hàm tìm kiếm: trả về TẤT CẢ địa điểm trong bán kính (>= 50)
-            results, final_radius = search_locations(
-                db_connection_string=self.db_connection_string,
+            # Gọi H3 + Redis search: trả về TẤT CẢ địa điểm trong bán kính (>= 50)
+            results, final_radius = self.h3_search.search_locations(
                 latitude=latitude,
                 longitude=longitude,
                 transportation_mode=transportation_mode
             )
             
             execution_time = time.time() - start_time
-            print(f"⏱️  find_nearest_locations executed in {execution_time:.3f}s")
+            print(f"⏱️  H3 + Redis search executed in {execution_time:.3f}s")
             
             return {
                 "status": "success",

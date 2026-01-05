@@ -41,36 +41,41 @@ class Config:
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
     VECTOR_DIMENSION = int(os.getenv("VECTOR_DIMENSION", "1024"))  # E5-large: 1024, E5-base: 768
     
+    # Redis Configuration (for H3 caching)
+    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+    REDIS_DB = int(os.getenv("REDIS_DB", "0"))
+    REDIS_CACHE_TTL = int(os.getenv("REDIS_CACHE_TTL", "3600"))  # 1 hour default
+    
+    # H3 Hexagonal Indexing Configuration
+    H3_RESOLUTION = int(os.getenv("H3_RESOLUTION", "9"))  # Resolution 9: ~461m diameter per hexagon
+    # Resolution options:
+    # - 8: ~1.22km diameter (fewer cells)
+    # - 9: ~461m diameter (balanced) ✅
+    # - 10: ~174m diameter (more precision)
+    
     # Location Search Configuration
     TOP_K_RESULTS = 10  # Số lượng điểm gần nhất trả về
     
-    # Transportation Mode Radius Configuration
-    # Cấu hình bán kính tìm kiếm cho từng phương tiện di chuyển
+    # Transportation Mode Configuration
+    # H3 k-ring coverage (resolution 9, edge ~174m):
+    # k=5: ~1.4km (91 cells), k=10: ~2.9km (331 cells), k=15: ~4.3km (721 cells)
+    # k=20: ~5.8km (1261 cells), k=30: ~8.6km (2791 cells), k=40: ~11.5km (4921 cells)
     TRANSPORTATION_CONFIG: Dict[str, Dict[str, int]] = {
         TransportationMode.WALKING: {
-            "min_radius": 0,      
-            "max_radius": 5000,     # 5000m (5km) - tăng để tìm đủ 50 địa điểm
-            "step": 1000              # Tăng 1000m mỗi lần
+            "h3_k_ring": 15         # k=15: ~4.3km coverage (721 cells)
         },
         TransportationMode.BICYCLING: {
-            "min_radius": 0,     
-            "max_radius": 15000,     # 15000m (15km)
-            "step": 5000             # Tăng 5000m mỗi lần (was 5m)
+            "h3_k_ring": 30          # k=30: ~8.6km coverage (2791 cells)
         },
         TransportationMode.TRANSIT: {
-            "min_radius": 0,     
-            "max_radius": 30000,    # 30000m (30km)
-            "step": 10000             # Tăng 10000m mỗi lần (was 10m)
+            "h3_k_ring": 40          # k=40: ~11.5km coverage (4921 cells)
         },
         TransportationMode.FLEXIBLE: {
-            "min_radius": 0,     
-            "max_radius": 40000,    # 40000m (40km)
-            "step": 15000             # Tăng 15000m mỗi lần (was 10m)
+            "h3_k_ring": 60          # k=60: ~17.2km coverage (10981 cells)
         },
         TransportationMode.DRIVING: {
-            "min_radius": 0,     
-            "max_radius": 70000,    # 70000m (70km)
-            "step": 20000             # Tăng 20000m mỗi lần (was 10m)
+            "h3_k_ring": 100         # k=100: ~28.7km coverage (30301 cells)
         }
     }
     
@@ -93,7 +98,7 @@ class Config:
             mode: Phương tiện di chuyển (WALKING, BICYCLING, etc.)
             
         Returns:
-            Dict chứa min_radius, max_radius, step
+            Dict chứa h3_k_ring (H3 k-ring value cho mode)
             
         Raises:
             ValueError: Nếu mode không hợp lệ

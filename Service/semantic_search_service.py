@@ -61,9 +61,9 @@ class SemanticSearchService:
             print(f"⏱️  search_by_query executed in {total_time:.3f}s (Embed: {embed_time:.3f}s + Search: {search_time:.3f}s)")
             print(f"Search returned {len(search_results) if search_results else 0} results")
             
-            # Kiểm tra nếu kết quả rỗng hoặc không hợp lệ
-            if not search_results or not isinstance(search_results, list):
-                print("⚠️ No results found or invalid search results")
+            # Kiểm tra nếu kết quả rỗng
+            if not search_results:
+                print("⚠️ No results found")
                 return {
                     "status": "success",
                     "query": query,
@@ -256,6 +256,14 @@ class SemanticSearchService:
                     "results": []
                 }
             
+            # # Kiểm trả lại nếu không có kết quả spatial
+            # rating_map = {loc["id"]: loc.get("rating", 0.5) for loc in spatial_results["results"]}
+            # # DEBUG: show sample ids/types to ensure they match Qdrant payload ids
+            # sample = spatial_results["results"][:10]
+            # print("DEBUG: spatial result sample ids/types:")
+            # for loc in sample:
+            #     print("  id:", loc.get("id"), "type:", type(loc.get("id")))
+
             # 2. Tạo map rating từ spatial results
             rating_map = {loc["id"]: loc.get("rating", 0.5) for loc in spatial_results["results"]}
             id_list = list(rating_map.keys())
