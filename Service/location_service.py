@@ -23,8 +23,8 @@ class LocationService:
             redis_port: Redis port
         """
         self.db_connection_string = db_connection_string
-        redis_host = redis_host or Config.REDIS_HOST
-        redis_port = redis_port or Config.REDIS_PORT
+        redis_host =  Config.REDIS_HOST
+        redis_port =  Config.REDIS_PORT
         self.h3_search = H3RadiusSearch(db_connection_string, redis_host, redis_port)
     
     def find_nearest_locations(
