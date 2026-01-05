@@ -248,7 +248,10 @@ class SemanticSearchService:
                 transportation_mode=transportation_mode
             )
             
-            if spatial_results["status"] != "success":
+        # THÊM LOGGING
+            print(f"📊 Spatial search result status: {spatial_results.get('status')}")
+            if spatial_results.get("status") != "success":
+                print(f"❌ Spatial search error: {spatial_results.get('error')}")
                 return {
                     "status": "error",
                     "error": "Spatial search failed",
@@ -264,9 +267,19 @@ class SemanticSearchService:
             # for loc in sample:
             #     print("  id:", loc.get("id"), "type:", type(loc.get("id")))
 
+        # THÊM LOGGING
+            print(f"✅ Spatial search found {len(spatial_results.get('results', []))} locations")
+        
             # 2. Tạo map rating từ spatial results
             rating_map = {loc["id"]: loc.get("rating", 0.5) for loc in spatial_results["results"]}
             id_list = list(rating_map.keys())
+
+                    # THÊM LOGGING
+            print(f"📋 ID list length: {len(id_list)}")
+            if id_list:
+                print(f"📋 Sample IDs (first 5): {id_list[:5]}")
+                print(f"📋 Sample ID types: {[type(id).__name__ for id in id_list[:5]]}")
+            
             
             if not id_list:
                 return {
@@ -281,13 +294,41 @@ class SemanticSearchService:
                     "results": []
                 }
             
-            # 3. Tìm kiếm semantic trong danh sách ID
+        # 3. Tìm kiếm semantic trong danh sách ID
             print(f"\n🔍 Step 2: Semantic search in {len(id_list)} locations...")
-            semantic_results = self.search_by_query_with_filter(
-                query=semantic_query,
-                id_list=id_list,
-                top_k=top_k_semantic
-            )
+            try:
+                semantic_results = self.search_by_query_with_filter(
+                    query=semantic_query,
+                    id_list=id_list,
+                    top_k=top_k_semantic
+                )
+                
+                # THÊM LOGGING
+                print(f"📊 Semantic search result status: {semantic_results.get('status')}")
+                if semantic_results.get("status") != "success":
+                    print(f"❌ Semantic search error: {semantic_results.get('error')}")
+                    return {
+                        "status": "error",
+                        "error": f"Semantic search failed: {semantic_results.get('error')}",
+                        "spatial_info": {
+                            "transportation_mode": spatial_results.get("transportation_mode"),
+                            "radius_used": spatial_results.get("radius_used"),
+                            "total_spatial_locations": len(id_list),
+                        },
+                        "results": []
+                    }
+                
+                print(f"✅ Semantic search found {semantic_results.get('total_results', 0)} results")
+                
+            except Exception as e:
+                import traceback
+                print(f"❌ Exception in semantic search: {str(e)}")
+                print(traceback.format_exc())
+                return {
+                    "status": "error",
+                    "error": f"Semantic search exception: {str(e)}",
+                    "results": []
+                }
             
             # 4. Merge rating từ spatial vào semantic results
             for result in semantic_results.get("results", []):
@@ -312,6 +353,9 @@ class SemanticSearchService:
             }
             
         except Exception as e:
+            import traceback
+            print(f"❌ Exception in search_combined: {str(e)}")
+            print(traceback.format_exc())
             return {
                 "status": "error",
                 "error": str(e),
