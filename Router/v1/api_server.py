@@ -8,7 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'
 
 from fastapi import FastAPI
 from config.config import Config
-
+import redis
 # Import routers
 from Router.v1.location_api import router as location_router
 from Router.v1.semantic_api import router as semantic_router
@@ -67,17 +67,20 @@ async def root():
 
 @app.get("/health")
 async def health():
-    """Health check endpoint"""
-    return {
+    """Health check endpoint với kiểm tra dependencies"""
+    health_status = {
         "status": "healthy",
-        "service": "Location Search API"
+        "service": "Location Search API",
+        "checks": {}
     }
-        # Check Redis
+    
+    # Check Redis
     try:
-        import redis
         r = redis.Redis(host=Config.REDIS_HOST, port=Config.REDIS_PORT, db=Config.REDIS_DB)
         r.ping()
         health_status["checks"]["redis"] = "ok"
     except Exception as e:
         health_status["checks"]["redis"] = f"error: {str(e)}"
         health_status["status"] = "degraded"
+    
+    return health_status
