@@ -2,7 +2,6 @@
 H3 + Redis Based Radius Search
 Tìm kiếm địa điểm sử dụng H3 hexagons và Redis cache để tối ưu performance
 """
-
 import h3
 import redis
 import json
@@ -10,7 +9,6 @@ import psycopg2
 import math
 from typing import List, Dict, Any, Tuple, Set
 from config.config import Config
-
 
 class H3RadiusSearch:
     """

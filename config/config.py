@@ -1,11 +1,10 @@
 import os
-from dotenv import load_dotenv
-from typing import Dict
 from enum import Enum
+from typing import Dict
+from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
-
 
 class TransportationMode(str, Enum):
     """Enum cho các phương tiện di chuyển"""
@@ -14,7 +13,6 @@ class TransportationMode(str, Enum):
     TRANSIT = "TRANSIT"
     FLEXIBLE = "FLEXIBLE"
     DRIVING = "DRIVING"
-
 
 class Config:
     """Cấu hình tổng hợp cho toàn bộ ứng dụng"""

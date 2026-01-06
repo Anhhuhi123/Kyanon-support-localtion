@@ -1,10 +1,10 @@
-from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, HasIdCondition
-import numpy as np
-from config.config import Config
-from typing import List, Tuple, Optional
 import uuid
 import time
+import numpy as np
+from config.config import Config
+from qdrant_client import QdrantClient
+from typing import List, Tuple, Optional
+from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, HasIdCondition
 
 class QdrantVectorStore:
     """Qdrant-based vector store for similarity search"""

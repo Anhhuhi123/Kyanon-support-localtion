@@ -3,13 +3,11 @@ Information Location Service
 Module để lấy thông tin đầy đủ của location từ database bằng ID
 Sử dụng Connection Pooling để tối ưu hiệu năng
 """
-
 import psycopg2
 from psycopg2 import pool
 from psycopg2.extras import execute_values
 from typing import List, Dict, Any, Optional
 from config.config import Config
-
 
 class LocationInfoService:
     """Service để query thông tin location từ database với connection pooling"""

@@ -3,14 +3,13 @@ Semantic Search Service
 Service xử lý logic tìm kiếm ngữ nghĩa (semantic search) với vector embeddings
 Kết hợp với filter theo danh sách ID từ PostGIS
 """
-
 import time
-from typing import List, Dict, Any, Optional, Tuple
-from retrieval.qdrant_vector_store import QdrantVectorStore
+from logic.route import RouteBuilder
 from retrieval.embeddings import EmbeddingGenerator
+from typing import List, Dict, Any, Optional, Tuple
+from logic.information_location import LocationInfoService
+from retrieval.qdrant_vector_store import QdrantVectorStore
 from qdrant_client.models import Filter, FieldCondition, MatchAny
-from Logic.Route import RouteBuilder
-from Logic.Information_location import LocationInfoService
 
 
 class SemanticSearchService:
@@ -253,7 +252,7 @@ class SemanticSearchService:
         Returns:
             Dict chứa CHỈ top_k_semantic địa điểm có similarity cao nhất
         """
-        from Service.location_service import LocationService
+        from services.location_service import LocationService
         from config.config import Config
         
         try:

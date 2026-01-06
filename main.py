@@ -11,7 +11,7 @@ if __name__ == "__main__":
     print("-" * 60)
     
     uvicorn.run(
-        "Router.v1.api_server:app",
+        "server:app",
         host="0.0.0.0",
         port=8000,
         reload=True
