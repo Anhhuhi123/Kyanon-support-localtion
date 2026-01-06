@@ -183,6 +183,8 @@ class SemanticSearchService:
             location_ids = [hit.id for hit in search_results]
             print(f"Fetching {len(location_ids)} location details from DB...")
             
+            # ko cần vì redis lưu sẵn rồi 
+            # ----------------------
             # Query DB để lấy thông tin đầy đủ
             db_start = time.time()
             locations_map = self.location_info_service.get_locations_by_ids(location_ids)
@@ -275,7 +277,7 @@ class SemanticSearchService:
                     "spatial_error": spatial_results.get("error"),
                     "results": []
                 }
-            
+            # print(spatial_results)
             # 2. Lấy danh sách ID từ spatial results
             id_list = [loc["id"] for loc in spatial_results["results"]]
             
