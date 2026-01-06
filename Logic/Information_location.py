@@ -93,9 +93,23 @@ class LocationInfoService:
                     address,
                     poi_type,
                     normalize_stars_reviews
-                FROM poi_locations
-                WHERE id = %s
+                FROM poi_locations_uuid
+                WHERE id = %s::uuid
             """
+
+            # query = """
+            #     SELECT 
+            #         id,
+            #         name,
+            #         lat,
+            #         long,
+            #         address,
+            #         poi_type,
+            #         normalize_stars_reviews
+            #     FROM poi_locations
+            #     WHERE id = %s
+            # """
+
             
             cursor.execute(query, (location_id,))
             row = cursor.fetchone()
@@ -151,9 +165,22 @@ class LocationInfoService:
                     address,
                     poi_type,
                     normalize_stars_reviews
-                FROM poi_locations
-                WHERE id = ANY(%s)
+                FROM poi_locations_uuid
+                WHERE id = ANY(%s::uuid[])
             """
+            # query = """
+            #     SELECT 
+            #         id,
+            #         name,
+            #         lat,
+            #         long,
+            #         address,
+            #         poi_type,
+            #         normalize_stars_reviews
+            #     FROM poi_locations
+            #     WHERE id = ANY(%s)
+            # """
+
             
             cursor.execute(query, (location_ids,))
             rows = cursor.fetchall()

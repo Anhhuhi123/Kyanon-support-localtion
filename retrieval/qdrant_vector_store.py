@@ -249,6 +249,15 @@ class QdrantVectorStore:
                 query_filter=id_filter,
                 limit=k
             ).points
+
+            # search_results = self.client.search(
+            #     collection_name=self.collection_name,
+            #     query_vector=query_vector,
+            #     query_filter=id_filter,
+            #     limit=k,
+            #     with_payload=False
+            # )
+
             
             return search_results
             
