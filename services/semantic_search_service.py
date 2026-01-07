@@ -53,9 +53,8 @@ class SemanticSearchService:
             search_start = time.time()
             search_results = self.vector_store.search(
                 query_embedding=query_embedding,
-                k=top_k,
-                query_filter=None
-            )
+                k=top_k
+         )
             search_time = time.time() - search_start
             
             total_time = time.time() - start_time
@@ -94,8 +93,7 @@ class SemanticSearchService:
                 if location_info:
                     result = {
                         "score": hit.score,
-                        "poi_type": hit.payload.get("poi_type"),  # Từ Qdrant payload
-                        **location_info  # Merge tất cả fields từ DB
+                        **location_info  # Merge tất cả fields từ DB (bao gồm poi_type)
                     }
                     results.append(result)
                 else:

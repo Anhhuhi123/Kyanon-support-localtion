@@ -161,8 +161,7 @@ class QdrantVectorStore:
             raise
     
 
-    def search(self, query_embedding: np.ndarray, k: int = Config.TOP_K_RESULTS, query_filter=None,
-               with_payload: bool = False, hnsw_ef: int = 32):
+    def search(self, query_embedding: np.ndarray, k: int = Config.TOP_K_RESULTS, query_filter=None):
         """
         Search for similar embeddings in Qdrant (Light RAG optimized)
         
@@ -183,26 +182,15 @@ class QdrantVectorStore:
             
             # Convert to list for Qdrant
             query_vector = query_embedding.astype('float32').tolist()
-            
-            # Light RAG: with_payload=False + hnsw_ef tuning
-            search_params = {"hnsw_ef": hnsw_ef}
-            
+                        
             # Search in Qdrant với hoặc không có filter
-            if query_filter is not None:
-                search_results = self.client.query_points(
-                    collection_name=self.collection_name,
-                    query=query_vector,
-                    query_filter=query_filter,
-                    limit=k,
-                    params=search_params
-                ).points
-            else:
-                search_results = self.client.query_points(
-                    collection_name=self.collection_name,
-                    query=query_vector,
-                    limit=k,
-                    params=search_params
-                ).points
+            # Light RAG: with_payload=False + hnsw_ef tuning để tăng tốc
+            search_results = self.client.search(
+                collection_name=self.collection_name,
+                query_vector=query_vector,
+                limit=k,
+                query_filter=query_filter
+            )
             
             # 🔍 DEBUG: in cấu trúc kết quả
             if search_results:
@@ -218,9 +206,7 @@ class QdrantVectorStore:
             
         except Exception as e:
             print(f"Error searching in Qdrant: {e}")
-            if query_filter is not None:
-                return []
-            return [], []
+            return []
     
     def search_by_ids(self, query_embedding: np.ndarray, point_ids: List[str], k: int = Config.TOP_K_RESULTS, 
                       with_payload: bool = False, hnsw_ef: int = 32):
