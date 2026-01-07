@@ -159,11 +159,13 @@ class SemanticSearchService:
             
             print(f"Searching in Qdrant with {len(id_list)} point IDs filter...")
             qdrant_start = time.time()
-            # Sử dụng search_by_ids thay vì search với FieldCondition
+            # Light RAG: chỉ lấy id + score từ Qdrant (with_payload=False)
             search_results = self.vector_store.search_by_ids(
                 query_embedding=query_embedding,
                 point_ids=id_list,
-                k=top_k
+                k=top_k,
+                with_payload=False,  # Chỉ lấy id+score → nhanh hơn
+                hnsw_ef=32  # Giảm ef để tăng tốc (trade-off: độ chính xác giảm ~2%)
             )
             qdrant_time = time.time() - qdrant_start
             
@@ -182,37 +184,18 @@ class SemanticSearchService:
             
             # Lấy location IDs từ Qdrant results (point.id)
             location_ids = [hit.id for hit in search_results]
-            print(f"Fetching {len(location_ids)} location details from DB...")
+            print(f"Mapping {len(location_ids)} locations from spatial_results...")
             
-            # ko cần vì redis lưu sẵn rồi 
-            # ----------------------
-            # Query DB để lấy thông tin đầy đủ
-            # db_start = time.time()
-            # locations_map = self.location_info_service.get_locations_by_ids(location_ids)
-            # print("locations_map", locations_map)
-            # print("location_ids", location_ids)
-            # db_time = time.time() - db_start
-            # print(f"⏱️  DB query: {db_time:.3f}s")
-
-            # ---------------------Bỏ query db----------------
-            db_start = time.time()
-            location_id_set = set(location_ids)  
+            # Dùng trực tiếp spatial_results (đã có full data từ find_nearest_locations)
+            fetch_start = time.time()
+            location_id_set = set(location_ids)
             locations_map = {
-                item["id"]: {
-                    "id": item["id"],
-                    "name": item["name"],
-                    "lat": item["lat"],
-                    "lon": item["lon"],
-                    "address": item["address"],
-                    "poi_type": item["poi_type"],
-                    "rating": item["rating"]
-                }
-                for item in spatial_results
+                item["id"]: item
+                for item in (spatial_results or [])
                 if item["id"] in location_id_set
             }
-            # print("locations_map", locations_map)
-            db_time = time.time() - db_start
-            print(f"⏱️  DB query: {db_time:.3f}s")
+            fetch_time = time.time() - fetch_start
+            print(f"⏱️  Data mapping: {fetch_time:.3f}s ({len(locations_map)}/{len(location_ids)} found)")
             
             # Merge semantic score với location info
             results = []
@@ -221,12 +204,11 @@ class SemanticSearchService:
                 if location_info:
                     result = {
                         "score": hit.score,
-                        "poi_type": hit.payload.get("poi_type"),  # Từ Qdrant payload
-                        **location_info  # Merge fields từ DB
+                        **location_info  # Merge fields
                     }
                     results.append(result)
                 else:
-                    print(f"⚠️ Location {hit.id} not found in DB")
+                    print(f"⚠️ Location {hit.id} not found")
             
             return {
                 "status": "success",
@@ -237,7 +219,7 @@ class SemanticSearchService:
                 "timing_detail": {
                     "embedding_seconds": round(embed_time, 3),
                     "qdrant_search_seconds": round(qdrant_time, 3),
-                    "db_query_seconds": round(db_time, 3)
+                    "data_fetch_seconds": round(fetch_time, 3)
                 },
                 "results": results
             }
