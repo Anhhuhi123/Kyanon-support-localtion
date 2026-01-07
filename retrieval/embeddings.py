@@ -1,10 +1,10 @@
-from sentence_transformers import SentenceTransformer
-from config.config import Config
-import numpy as np
-from typing import List, Union
+import os
 import time
 import torch
-import os
+import numpy as np
+from typing import List, Union
+from config.config import Config
+from sentence_transformers import SentenceTransformer
 
 # Force offline mode for HuggingFace to use cached models
 os.environ['TRANSFORMERS_OFFLINE'] = '1'

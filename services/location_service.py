@@ -3,11 +3,10 @@ Location Service
 Service layer xử lý logic nghiệp vụ cho tìm kiếm địa điểm theo tọa độ và phương tiện
 Sử dụng H3 + Redis cache để tối ưu performance
 """
-
 import time
-from typing import List, Dict, Any, Tuple
-from Logic.h3_radius_search import H3RadiusSearch
 from config.config import Config
+from typing import List, Dict, Any, Tuple
+from radius_logic.h3_radius_search import H3RadiusSearch
 
 
 class LocationService:
@@ -23,6 +22,8 @@ class LocationService:
             redis_port: Redis port
         """
         self.db_connection_string = db_connection_string
+        redis_host =  Config.REDIS_HOST
+        redis_port =  Config.REDIS_PORT
         self.h3_search = H3RadiusSearch(db_connection_string, redis_host, redis_port)
     
     def find_nearest_locations(

@@ -4,13 +4,10 @@ Script để ingest POI data từ PostgreSQL vào Qdrant
 - Tạo embeddings từ poi_type
 - Lưu vào Qdrant với point.id = location id, payload chỉ chứa poi_type
 """
-
 import sys
 import os
-
 # Add parent directory to path để import modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
 import psycopg2
 from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct

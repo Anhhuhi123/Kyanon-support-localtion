@@ -1,11 +1,10 @@
 import os
-from dotenv import load_dotenv
-from typing import Dict
 from enum import Enum
+from typing import Dict
+from dotenv import load_dotenv
 
 # Load environment variables from .env file
 load_dotenv()
-
 
 class TransportationMode(str, Enum):
     """Enum cho các phương tiện di chuyển"""
@@ -14,7 +13,6 @@ class TransportationMode(str, Enum):
     TRANSIT = "TRANSIT"
     FLEXIBLE = "FLEXIBLE"
     DRIVING = "DRIVING"
-
 
 class Config:
     """Cấu hình tổng hợp cho toàn bộ ứng dụng"""
@@ -42,7 +40,7 @@ class Config:
     VECTOR_DIMENSION = int(os.getenv("VECTOR_DIMENSION", "1024"))  # E5-large: 1024, E5-base: 768
     
     # Redis Configuration (for H3 caching)
-    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+    REDIS_HOST = os.getenv("REDIS_HOST", "redis")
     REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_DB = int(os.getenv("REDIS_DB", "0"))
     REDIS_CACHE_TTL = int(os.getenv("REDIS_CACHE_TTL", "3600"))  # 1 hour default

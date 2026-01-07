@@ -2,7 +2,6 @@
 H3 + Redis Based Radius Search
 Tìm kiếm địa điểm sử dụng H3 hexagons và Redis cache để tối ưu performance
 """
-
 import h3
 import redis
 import json
@@ -10,7 +9,6 @@ import psycopg2
 import math
 from typing import List, Dict, Any, Tuple, Set
 from config.config import Config
-
 
 class H3RadiusSearch:
     """
@@ -205,10 +203,24 @@ class H3RadiusSearch:
                     lat,
                     long,
                     COALESCE(normalize_stars_reviews, 0.5) AS rating
-                FROM poi_locations
+                FROM poi_locations_uuid
                 WHERE lat BETWEEN %s AND %s
                   AND long BETWEEN %s AND %s
             """
+
+            # query = """
+            #     SELECT 
+            #         id,
+            #         name,
+            #         poi_type,
+            #         address,
+            #         lat,
+            #         long,
+            #         COALESCE(normalize_stars_reviews, 0.5) AS rating
+            #     FROM poi_locations
+            #     WHERE lat BETWEEN %s AND %s
+            #       AND long BETWEEN %s AND %s
+            # """
             
             bbox_size_lat = max_lat - min_lat
             bbox_size_lon = max_lon - min_lon

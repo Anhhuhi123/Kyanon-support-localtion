@@ -2,11 +2,9 @@
 Route Builder Service
 Xây dựng lộ trình tối ưu từ danh sách địa điểm sử dụng thuật toán Greedy
 """
-
 import math
 from typing import List, Dict, Any, Tuple, Optional
 from config.config import Config
-
 
 class RouteBuilder:
     """
