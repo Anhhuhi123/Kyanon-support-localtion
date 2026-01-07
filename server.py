@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from config.config import Config
 from routers.v1.location_api import router as location_router
 from routers.v1.semantic_api import router as semantic_router
-
+from routers.v1.poi_api import router as poi_router
 # Validate config
 Config.validate()
 # Initialize FastAPI app
@@ -106,3 +106,4 @@ async def startup_event():
 # Include routers
 app.include_router(location_router)
 app.include_router(semantic_router)
+app.include_router(poi_router)
