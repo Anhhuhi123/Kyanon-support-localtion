@@ -18,35 +18,35 @@ class Config:
     """Cấu hình tổng hợp cho toàn bộ ứng dụng"""
     
     # Database Configuration
-    DB_HOST = os.getenv("DB_HOST", "localhost")
-    DB_PORT = int(os.getenv("DB_PORT", "5432"))
-    DB_NAME = os.getenv("DB_NAME", "demo_p3")
-    DB_USER = os.getenv("DB_USER", "postgres")
-    DB_PASSWORD = os.getenv("DB_PASSWORD", "")
+    DB_HOST = os.getenv("DB_HOST")
+    DB_PORT = int(os.getenv("DB_PORT"))
+    DB_NAME = os.getenv("DB_NAME")
+    DB_USER = os.getenv("DB_USER")
+    DB_PASSWORD = os.getenv("DB_PASSWORD")
     
     # Document Processing Configuration
-    CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "500"))
-    CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "50"))
+    CHUNK_SIZE = int(os.getenv("CHUNK_SIZE"))
+    CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP"))
     
     # Embedding Model Configuration
-    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small")
-    EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "32"))
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL")
+    EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE"))
     
     # Qdrant configurations
     USE_QDRANT = True  # Use Qdrant for vector storage
     QDRANT_COLLECTION_NAME = "Map_Kyanon"  # Lưu trữ trong Qdrant
-    QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6333")
-    QDRANT_API_KEY = os.getenv("QDRANT_API_KEY", "")
-    VECTOR_DIMENSION = int(os.getenv("VECTOR_DIMENSION", "1024"))  # E5-large: 1024, E5-base: 768
+    QDRANT_URL = os.getenv("QDRANT_URL")
+    QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
+    VECTOR_DIMENSION = int(os.getenv("VECTOR_DIMENSION"))  # E5-large: 1024, E5-base: 768
     
     # Redis Configuration (for H3 caching)
-    REDIS_HOST = os.getenv("REDIS_HOST", "redis")
-    REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
-    REDIS_DB = int(os.getenv("REDIS_DB", "0"))
-    REDIS_CACHE_TTL = int(os.getenv("REDIS_CACHE_TTL", "3600"))  # 1 hour default
+    REDIS_HOST = os.getenv("REDIS_HOST")
+    REDIS_PORT = int(os.getenv("REDIS_PORT"))
+    REDIS_DB = int(os.getenv("REDIS_DB"))
+    REDIS_CACHE_TTL = int(os.getenv("REDIS_CACHE_TTL"))  # 1 hour default
     
     # H3 Hexagonal Indexing Configuration
-    H3_RESOLUTION = int(os.getenv("H3_RESOLUTION", "9"))  # Resolution 9: ~461m diameter per hexagon
+    H3_RESOLUTION = int(os.getenv("H3_RESOLUTION"))  # Resolution 9: ~461m diameter per hexagon
     # Resolution options:
     # - 8: ~1.22km diameter (fewer cells)
     # - 9: ~461m diameter (balanced) ✅
