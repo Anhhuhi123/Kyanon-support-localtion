@@ -5,7 +5,7 @@ from config.config import Config
 
 
 def create_table_if_not_exists(conn):
-    """Tạo table poi_locations_uuid nếu chưa tồn tại"""
+    """Tạo table poi_locations_uuid_test nếu chưa tồn tại"""
     cursor = conn.cursor()
 
     # Enable PostGIS
@@ -15,7 +15,7 @@ def create_table_if_not_exists(conn):
 
     # Create table
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS poi_locations_uuid (
+        CREATE TABLE IF NOT EXISTS poi_locations_uuid_test (
             id UUID PRIMARY KEY,
             name TEXT,
             address TEXT,
@@ -31,13 +31,13 @@ def create_table_if_not_exists(conn):
 
     # Create spatial index
     cursor.execute("""
-        CREATE INDEX IF NOT EXISTS poi_locations_uuid_geom_idx
-        ON poi_locations_uuid USING GIST (geom);
+        CREATE INDEX IF NOT EXISTS poi_locations_uuid_test_geom_idx
+        ON poi_locations_uuid_test USING GIST (geom);
     """)
 
     conn.commit()
     cursor.close()
-    print("✓ Table poi_locations_uuid sẵn sàng")
+    print("✓ Table poi_locations_uuid_test sẵn sàng")
 
 
 def import_csv_to_postgres(csv_file_path, batch_size=100):
@@ -112,7 +112,7 @@ def import_csv_to_postgres(csv_file_path, batch_size=100):
 
 
 UPSERT_SQL = """
-INSERT INTO poi_locations_uuid
+INSERT INTO poi_locations_uuid_test
 (id, name, address, lat, long, geom, poi_type, avg_star, total_reviews, normalize_stars_reviews)
 VALUES (
     %s, %s, %s, %s, %s,
@@ -137,13 +137,13 @@ def verify_data(limit=5):
     conn = psycopg2.connect(Config.get_db_connection_string())
     cursor = conn.cursor()
 
-    cursor.execute("SELECT COUNT(*) FROM poi_locations_uuid;")
+    cursor.execute("SELECT COUNT(*) FROM poi_locations_uuid_test;")
     print(f"\n📊 Tổng POI: {cursor.fetchone()[0]}")
 
     cursor.execute(f"""
         SELECT id, name, lat, long, poi_type, avg_star, total_reviews,
                normalize_stars_reviews, ST_AsText(geom)
-        FROM poi_locations_uuid
+        FROM poi_locations_uuid_test
         LIMIT {limit};
     """)
 
