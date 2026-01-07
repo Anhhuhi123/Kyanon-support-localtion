@@ -15,7 +15,7 @@ DB_PORT = int(os.getenv("DB_PORT"))
 DB_NAME = os.getenv("DB_NAME")
 DB_USER = os.getenv("DB_USER")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
-CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT"))
+CONNECT_TIMEOUT = int(os.getenv("DB_CONNECT_TIMEOUT", 10))
 def get_db_connection():
     """
     Trả về psycopg2 connection sử dụng biến môi trường từ .env.
@@ -226,6 +226,60 @@ def fetch_one_row(table_name: str, schema: str = "public", where_clause: str = N
             conn.close()
 # ----------------- END NEW -----------------
 
+def show_duplicate_uuids(table_name: str, schema: str = "public", id_column: str = "id", limit: int = 50):
+    """
+    In ra các giá trị id bị duplicate:
+      - list các id trùng (limit)
+      - số nhóm duplicate và tổng số hàng duplicate
+    """
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            # top duplicate groups
+            q_top = sql.SQL(
+                "SELECT {id_col}::text AS id, COUNT(*) AS cnt "
+                "FROM {schema}.{table} "
+                "GROUP BY {id_col} "
+                "HAVING COUNT(*) > 1 "
+                "ORDER BY cnt DESC "
+                "LIMIT %s"
+            ).format(
+                id_col=sql.Identifier(id_column),
+                schema=sql.Identifier(schema),
+                table=sql.Identifier(table_name),
+            )
+            cur.execute(q_top, (limit,))
+            rows = cur.fetchall()
+            if not rows:
+                print(f"No duplicate values found for column '{id_column}' in {schema}.{table_name}")
+            else:
+                print(f"Top {len(rows)} duplicate id(s) in {schema}.{table_name} (column: {id_column}):")
+                for r in rows:
+                    print(f"  - {r['id']}: {r['cnt']}")
+
+            # summary: number of groups and total duplicate rows
+            q_summary = sql.SQL(
+                "SELECT COUNT(*) AS groups, SUM(cnt) AS total_dup_rows FROM ("
+                "  SELECT COUNT(*) AS cnt FROM {schema}.{table} GROUP BY {id_col} HAVING COUNT(*) > 1"
+                ") sub"
+            ).format(
+                schema=sql.Identifier(schema),
+                table=sql.Identifier(table_name),
+                id_col=sql.Identifier(id_column),
+            )
+            cur.execute(q_summary)
+            s = cur.fetchone()
+            groups = s["groups"] or 0
+            total_dup = s["total_dup_rows"] or 0
+            print(f"\nSummary: duplicate groups={groups}, total duplicate rows={total_dup}")
+    except Exception as e:
+        print(f"DB error: {e}")
+    finally:
+        if conn:
+            conn.close()
+
+# ...existing code...
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="DB helper (reads DB config from .env)")
     parser.add_argument("--list", action="store_true", help="List all tables (excluding system schemas)")
@@ -236,6 +290,12 @@ if __name__ == '__main__':
     parser.add_argument("--sample", type=str, help="Show one sample row from table (table name)")
     parser.add_argument("--sample-schema", type=str, default="public", help="Schema for --sample (default: public)")
     parser.add_argument("--where", type=str, help="Optional WHERE clause for --sample (raw SQL condition)")
+
+    # New args for duplicate check
+    parser.add_argument("--dups-table", type=str, help="Check duplicate ids in table (table name)")
+    parser.add_argument("--id-column", type=str, default="id", help="Column name to check duplicates (default: id)")
+    parser.add_argument("--dups-limit", type=int, default=50, help="How many duplicate ids to list (default: 50)")
+
     parser.add_argument("sql", nargs="?", help="SQL to run (optional). If omitted, runs SELECT now()")
     args = parser.parse_args()
 
@@ -247,6 +307,8 @@ if __name__ == '__main__':
         show_table_info(args.info, schema=args.info_schema, do_count=args.count)
     elif args.sample:
         fetch_one_row(args.sample, schema=args.sample_schema, where_clause=args.where)
+    elif args.dups_table:
+        show_duplicate_uuids(args.dups_table, schema=args.info_schema, id_column=args.id_column, limit=args.dups_limit)
     else:
         sql_arg = args.sql if args.sql else "SELECT now() AS now"
         test_connection(sql_arg)

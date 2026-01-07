@@ -47,7 +47,6 @@ ENV/
 htmlcov/
 
 # Jupyter Notebook
-*.ipynb
 .ipynb_checkpoints/
 
 # Logs
