@@ -1,3 +1,5 @@
+/.venv
+.venv/
 # Environment variables
 .env
 .env.local

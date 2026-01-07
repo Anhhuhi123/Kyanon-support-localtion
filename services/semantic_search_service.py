@@ -3,13 +3,13 @@ Semantic Search Service
 Service xử lý logic tìm kiếm ngữ nghĩa (semantic search) với vector embeddings
 Kết hợp với filter theo danh sách ID từ PostGIS
 """
-
 import time
-from typing import List, Dict, Any, Optional, Tuple
-from retrieval.qdrant_vector_store import QdrantVectorStore
+from radius_logic.route import RouteBuilder
 from retrieval.embeddings import EmbeddingGenerator
+from typing import List, Dict, Any, Optional, Tuple
+from radius_logic.information_location import LocationInfoService
+from retrieval.qdrant_vector_store import QdrantVectorStore
 from qdrant_client.models import Filter, FieldCondition, MatchAny
-from Logic.Route import RouteBuilder
 
 
 class SemanticSearchService:
@@ -20,6 +20,7 @@ class SemanticSearchService:
         self.vector_store = QdrantVectorStore()
         self.embedder = EmbeddingGenerator()
         self.route_builder = RouteBuilder()
+        self.location_info_service = LocationInfoService()
     
     def search_by_query(self, query: str, top_k: int = 10) -> Dict[str, Any]:
         """
@@ -76,20 +77,29 @@ class SemanticSearchService:
                     "results": []
                 }
             
-            # 3. Format kết quả
+            # 3. Lấy location IDs từ Qdrant results
+            location_ids = [hit.id for hit in search_results]  # hit.id là point.id
+            print(f"Fetching {len(location_ids)} location details from DB...")
+            
+            # 4. Query DB để lấy thông tin đầy đủ
+            db_start = time.time()
+            locations_map = self.location_info_service.get_locations_by_ids(location_ids)
+            db_time = time.time() - db_start
+            print(f"DB query took {db_time:.3f}s")
+            
+            # 5. Merge semantic score với location info
             results = []
             for hit in search_results:
-                result = {
-                    "score": hit.score,
-                    "id": hit.payload.get("id"),
-                    "name": hit.payload.get("name"),
-                    "poi_type": hit.payload.get("poi_type"),
-                    "address": hit.payload.get("address"),
-                    "lat": hit.payload.get("lat"),
-                    "lon": hit.payload.get("long"),
-                    "text": hit.payload.get("text")
-                }
-                results.append(result)
+                location_info = locations_map.get(hit.id)
+                if location_info:
+                    result = {
+                        "score": hit.score,
+                        "poi_type": hit.payload.get("poi_type"),  # Từ Qdrant payload
+                        **location_info  # Merge tất cả fields từ DB
+                    }
+                    results.append(result)
+                else:
+                    print(f"⚠️ Location {hit.id} not found in DB")
             
             return {
                 "status": "success",
@@ -116,7 +126,8 @@ class SemanticSearchService:
         self,
         query: str,
         id_list: List[str],
-        top_k: int = 10
+        top_k: int = 10,
+        spatial_results: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Tìm kiếm địa điểm theo query ngữ nghĩa với filter ID (dùng cho combined search)
@@ -142,27 +153,22 @@ class SemanticSearchService:
                 }
             
             print(f"Generating embedding for query: {query}")
+            embed_start = time.time()
             query_embedding = self.embedder.generate_single_embedding(query)
+            embed_time = time.time() - embed_start
             
-            print(f"Creating filter for {len(id_list)} IDs...")
-            id_filter = Filter(
-                must=[
-                    FieldCondition(
-                        key="id",
-                        match=MatchAny(any=id_list)
-                    )
-                ]
-            )
-            
-            print(f"Searching in Qdrant with ID filter...")
-            search_results = self.vector_store.search(
+            print(f"Searching in Qdrant with {len(id_list)} point IDs filter...")
+            qdrant_start = time.time()
+            # Sử dụng search_by_ids thay vì search với FieldCondition
+            search_results = self.vector_store.search_by_ids(
                 query_embedding=query_embedding,
-                k=top_k,
-                query_filter=id_filter
+                point_ids=id_list,
+                k=top_k
             )
+            qdrant_time = time.time() - qdrant_start
             
             execution_time = time.time() - start_time
-            print(f"⏱️  search_by_query_with_filter executed in {execution_time:.3f}s")
+            print(f"⏱️  Embedding: {embed_time:.3f}s, Qdrant search: {qdrant_time:.3f}s")
             
             if not search_results or not isinstance(search_results, list):
                 return {
@@ -174,19 +180,53 @@ class SemanticSearchService:
                     "results": []
                 }
             
+            # Lấy location IDs từ Qdrant results (point.id)
+            location_ids = [hit.id for hit in search_results]
+            print(f"Fetching {len(location_ids)} location details from DB...")
+            
+            # ko cần vì redis lưu sẵn rồi 
+            # ----------------------
+            # Query DB để lấy thông tin đầy đủ
+            # db_start = time.time()
+            # locations_map = self.location_info_service.get_locations_by_ids(location_ids)
+            # print("locations_map", locations_map)
+            # print("location_ids", location_ids)
+            # db_time = time.time() - db_start
+            # print(f"⏱️  DB query: {db_time:.3f}s")
+
+            # ---------------------Bỏ query db----------------
+            db_start = time.time()
+            location_id_set = set(location_ids)  
+            locations_map = {
+                item["id"]: {
+                    "id": item["id"],
+                    "name": item["name"],
+                    "lat": item["lat"],
+                    "lon": item["lon"],
+                    "address": item["address"],
+                    "poi_type": item["poi_type"],
+                    "rating": item["rating"]
+                }
+                for item in spatial_results
+                if item["id"] in location_id_set
+            }
+            # print("locations_map", locations_map)
+            db_time = time.time() - db_start
+            print(f"⏱️  DB query: {db_time:.3f}s")
+            
+            # Merge semantic score với location info
             results = []
             for hit in search_results:
-                result = {
-                    "score": hit.score,
-                    "id": hit.payload.get("id"),
-                    "name": hit.payload.get("name"),
-                    "poi_type": hit.payload.get("poi_type"),
-                    "address": hit.payload.get("address"),
-                    "lat": hit.payload.get("lat"),
-                    "lon": hit.payload.get("long"),
-                    "text": hit.payload.get("text")
-                }
-                results.append(result)
+                location_info = locations_map.get(hit.id)
+                if location_info:
+                    result = {
+                        "score": hit.score,
+                        "poi_type": hit.payload.get("poi_type"),  # Từ Qdrant payload
+                        **location_info  # Merge fields từ DB
+                    }
+                    results.append(result)
+                else:
+                    print(f"⚠️ Location {hit.id} not found in DB")
             
             return {
                 "status": "success",
@@ -194,6 +234,11 @@ class SemanticSearchService:
                 "filter_ids_count": len(id_list),
                 "total_results": len(results),
                 "execution_time_seconds": round(execution_time, 3),
+                "timing_detail": {
+                    "embedding_seconds": round(embed_time, 3),
+                    "qdrant_search_seconds": round(qdrant_time, 3),
+                    "db_query_seconds": round(db_time, 3)
+                },
                 "results": results
             }
             
@@ -232,7 +277,7 @@ class SemanticSearchService:
         Returns:
             Dict chứa CHỈ top_k_semantic địa điểm có similarity cao nhất
         """
-        from Service.location_service import LocationService
+        from services.location_service import LocationService
         from config.config import Config
         
         try:
@@ -248,38 +293,16 @@ class SemanticSearchService:
                 transportation_mode=transportation_mode
             )
             
-        # THÊM LOGGING
-            print(f"📊 Spatial search result status: {spatial_results.get('status')}")
-            if spatial_results.get("status") != "success":
-                print(f"❌ Spatial search error: {spatial_results.get('error')}")
+            if spatial_results["status"] != "success":
                 return {
                     "status": "error",
                     "error": "Spatial search failed",
                     "spatial_error": spatial_results.get("error"),
                     "results": []
                 }
-            
-            # # Kiểm trả lại nếu không có kết quả spatial
-            # rating_map = {loc["id"]: loc.get("rating", 0.5) for loc in spatial_results["results"]}
-            # # DEBUG: show sample ids/types to ensure they match Qdrant payload ids
-            # sample = spatial_results["results"][:10]
-            # print("DEBUG: spatial result sample ids/types:")
-            # for loc in sample:
-            #     print("  id:", loc.get("id"), "type:", type(loc.get("id")))
-
-        # THÊM LOGGING
-            print(f"✅ Spatial search found {len(spatial_results.get('results', []))} locations")
-        
-            # 2. Tạo map rating từ spatial results
-            rating_map = {loc["id"]: loc.get("rating", 0.5) for loc in spatial_results["results"]}
-            id_list = list(rating_map.keys())
-
-                    # THÊM LOGGING
-            print(f"📋 ID list length: {len(id_list)}")
-            if id_list:
-                print(f"📋 Sample IDs (first 5): {id_list[:5]}")
-                print(f"📋 Sample ID types: {[type(id).__name__ for id in id_list[:5]]}")
-            
+            # print(len(spatial_results["results"]))    
+            # 2. Lấy danh sách ID từ spatial results
+            id_list = [loc["id"] for loc in spatial_results["results"]]
             
             if not id_list:
                 return {
@@ -294,48 +317,32 @@ class SemanticSearchService:
                     "results": []
                 }
             
-        # 3. Tìm kiếm semantic trong danh sách ID
+            # 3. Tìm kiếm semantic trong danh sách ID
             print(f"\n🔍 Step 2: Semantic search in {len(id_list)} locations...")
-            try:
-                semantic_results = self.search_by_query_with_filter(
-                    query=semantic_query,
-                    id_list=id_list,
-                    top_k=top_k_semantic
-                )
-                
-                # THÊM LOGGING
-                print(f"📊 Semantic search result status: {semantic_results.get('status')}")
-                if semantic_results.get("status") != "success":
-                    print(f"❌ Semantic search error: {semantic_results.get('error')}")
-                    return {
-                        "status": "error",
-                        "error": f"Semantic search failed: {semantic_results.get('error')}",
-                        "spatial_info": {
-                            "transportation_mode": spatial_results.get("transportation_mode"),
-                            "radius_used": spatial_results.get("radius_used"),
-                            "total_spatial_locations": len(id_list),
-                        },
-                        "results": []
-                    }
-                
-                print(f"✅ Semantic search found {semantic_results.get('total_results', 0)} results")
-                
-            except Exception as e:
-                import traceback
-                print(f"❌ Exception in semantic search: {str(e)}")
-                print(traceback.format_exc())
-                return {
-                    "status": "error",
-                    "error": f"Semantic search exception: {str(e)}",
-                    "results": []
-                }
+            semantic_start = time.time()
+            semantic_results = self.search_by_query_with_filter(
+                query=semantic_query,
+                id_list=id_list,
+                top_k=top_k_semantic,
+                spatial_results = spatial_results["results"]
+            )
+            semantic_time = time.time() - semantic_start
             
-            # 4. Merge rating từ spatial vào semantic results
-            for result in semantic_results.get("results", []):
-                result["rating"] = rating_map.get(result["id"], 0.5)
+            # Semantic results đã có đầy đủ thông tin từ DB (bao gồm rating)
+            # Không cần merge rating từ spatial results nữa
             
             total_time = time.time() - total_start
-            print(f"\n⏱️  search_combined total execution time: {total_time:.3f}s")
+            spatial_time = spatial_results.get("execution_time_seconds", 0)
+            
+            # Lấy timing detail từ semantic search
+            semantic_timing = semantic_results.get("timing_detail", {})
+            
+            print(f"\n⏱️  Timing breakdown:")
+            print(f"   • Spatial search: {spatial_time:.3f}s")
+            print(f"   • Embedding: {semantic_timing.get('embedding_seconds', 0):.3f}s")
+            print(f"   • Qdrant search: {semantic_timing.get('qdrant_search_seconds', 0):.3f}s")
+            print(f"   • DB query: {semantic_timing.get('db_query_seconds', 0):.3f}s")
+            print(f"   • Total: {total_time:.3f}s")
             
             # Trả về CHỈ semantic results (top_k_semantic địa điểm có similarity cao nhất) + rating
             return {
@@ -349,13 +356,11 @@ class SemanticSearchService:
                 },
                 "total_results": semantic_results.get("total_results", 0),
                 "total_execution_time_seconds": round(total_time, 3),
+                "timing_detail": semantic_timing,  # Pass through timing detail
                 "results": semantic_results.get("results", [])
             }
             
         except Exception as e:
-            import traceback
-            print(f"❌ Exception in search_combined: {str(e)}")
-            print(traceback.format_exc())
             return {
                 "status": "error",
                 "error": str(e),
@@ -446,6 +451,10 @@ class SemanticSearchService:
             print(f"⏱️  Total execution time: {total_time:.3f}s")
             print(f"✅ Generated {len(routes)} route(s)")
             
+            # Lấy timing detail từ search result
+            search_timing = search_result.get("timing_detail", {})
+            spatial_time = search_result.get("spatial_info", {}).get("spatial_execution_time", 0)
+            
             return {
                 "status": "success",
                 "query": semantic_query,
@@ -457,8 +466,12 @@ class SemanticSearchService:
                 "semantic_places_count": len(semantic_places),
                 "total_execution_time_seconds": round(total_time, 3),
                 "timing_breakdown": {
-                    "search_seconds": round(search_result.get("total_execution_time_seconds", 0), 3),
-                    "route_building_seconds": round(route_time, 3)
+                    "spatial_search_seconds": round(spatial_time, 3),
+                    "embedding_seconds": search_timing.get("embedding_seconds", 0),
+                    "qdrant_search_seconds": search_timing.get("qdrant_search_seconds", 0),
+                    "db_query_seconds": search_timing.get("db_query_seconds", 0),
+                    "route_building_seconds": round(route_time, 3),
+                    "total_search_seconds": round(search_result.get("total_execution_time_seconds", 0), 3)
                 },
                 "routes": routes
             }

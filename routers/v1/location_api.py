@@ -5,28 +5,16 @@ API endpoints cho tìm kiếm địa điểm theo tọa độ và phương tiệ
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
-from typing import Optional
-
-from Service.location_service import LocationService
 from config.config import Config
+from fastapi import APIRouter, HTTPException
+from pydantics.location import LocationSearchRequest
+from services.location_service import LocationService
 
 # Initialize router
 router = APIRouter(prefix="/api/v1/locations", tags=["Location Search (PostGIS)"])
 
 # Initialize service
 location_service = LocationService(Config.get_db_connection_string())
-
-
-# Request Models
-class LocationSearchRequest(BaseModel):
-    """Request model cho tìm kiếm địa điểm (trả về TẤT CẢ địa điểm trong bán kính >= 50)"""
-    latitude: float = Field(..., description="Vĩ độ", json_schema_extra={"example": 10.8294811})
-    longitude: float = Field(..., description="Kinh độ", json_schema_extra={"example": 106.7737852})
-    transportation_mode: str = Field(..., description="Phương tiện (WALKING/BICYCLING/TRANSIT/FLEXIBLE/DRIVING)", json_schema_extra={"example": "WALKING"})
-
 
 @router.post("/search")
 async def search_locations(request: LocationSearchRequest):

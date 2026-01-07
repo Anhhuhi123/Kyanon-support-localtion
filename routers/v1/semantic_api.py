@@ -5,56 +5,23 @@ API endpoints cho tìm kiếm ngữ nghĩa với vector embeddings (Qdrant)
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
-
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
-from typing import Optional, List
-
-from Service.semantic_search_service import SemanticSearchService
+from services.semantic_search_service import SemanticSearchService
+from pydantics.semantic import SemanticSearchRequest, CombinedSearchRequest, RouteSearchRequest
 
 # Initialize router
 router = APIRouter(prefix="/api/v1/semantic", tags=["Semantic Search (Qdrant)"])
-
 # Service instance sẽ được set từ api_server.py startup event
 _semantic_service_instance = None
-
 
 def get_semantic_service():
     """Lấy singleton instance của SemanticSearchService"""
     global _semantic_service_instance
     if _semantic_service_instance is None:
         # Fallback: nếu chưa init từ startup, init ngay
-        from Service.semantic_search_service import SemanticSearchService
+        from services.semantic_search_service import SemanticSearchService
         _semantic_service_instance = SemanticSearchService()
     return _semantic_service_instance
-
-
-# Request Models
-class SemanticSearchRequest(BaseModel):
-    """Request model cho tìm kiếm ngữ nghĩa (không cần filter ID)"""
-    query: str = Field(..., description="Câu query tìm kiếm ngữ nghĩa", json_schema_extra={"example": "Travel"})
-    top_k: Optional[int] = Field(10, description="Số lượng kết quả", json_schema_extra={"example": 10})
-
-
-class CombinedSearchRequest(BaseModel):
-    """Request model cho tìm kiếm kết hợp spatial + semantic"""
-    latitude: float = Field(..., description="Vĩ độ", json_schema_extra={"example": 10.8294811})
-    longitude: float = Field(..., description="Kinh độ", json_schema_extra={"example": 106.7737852})
-    transportation_mode: str = Field(..., description="Phương tiện (WALKING/BICYCLING/TRANSIT/FLEXIBLE/DRIVING)", json_schema_extra={"example": "WALKING"})
-    semantic_query: str = Field(..., description="Câu query ngữ nghĩa", json_schema_extra={"example": "Travel"})
-    top_k: Optional[int] = Field(10, description="Số lượng kết quả semantic cuối cùng", json_schema_extra={"example": 10})
-
-
-class RouteSearchRequest(BaseModel):
-    """Request model cho tìm kiếm và xây dựng lộ trình"""
-    latitude: float = Field(..., description="Vĩ độ user", json_schema_extra={"example": 10.8294811})
-    longitude: float = Field(..., description="Kinh độ user", json_schema_extra={"example": 106.7737852})
-    transportation_mode: str = Field(..., description="Phương tiện (WALKING/BICYCLING/TRANSIT/FLEXIBLE/DRIVING)", json_schema_extra={"example": "WALKING"})
-    semantic_query: str = Field(..., description="Câu query ngữ nghĩa (nhu cầu người dùng)", json_schema_extra={"example": "cafe phù hợp làm việc"})
-    max_time_minutes: Optional[int] = Field(180, description="Thời gian tối đa (phút)", json_schema_extra={"example": 180})
-    target_places: Optional[int] = Field(5, description="Số địa điểm mỗi lộ trình", json_schema_extra={"example": 5})
-    max_routes: Optional[int] = Field(3, description="Số lộ trình tối đa", json_schema_extra={"example": 3})
-    top_k_semantic: Optional[int] = Field(10, description="Số địa điểm từ semantic search", json_schema_extra={"example": 10})
 
 
 @router.post("/search")

@@ -1,10 +1,10 @@
-from sentence_transformers import SentenceTransformer
-from config.config import Config
-import numpy as np
-from typing import List, Union
+import os
 import time
 import torch
-import os
+import numpy as np
+from typing import List, Union
+from config.config import Config
+from sentence_transformers import SentenceTransformer
 
 # Force offline mode for HuggingFace to use cached models
 os.environ['TRANSFORMERS_OFFLINE'] = '1'
@@ -32,6 +32,46 @@ class EmbeddingGenerator:
             print(f"❌ Error loading model: {e}")
             print(f"💡 Model may not be cached yet. Please run once with internet to download:")
             print(f"   python -c \"from sentence_transformers import SentenceTransformer; SentenceTransformer('{Config.EMBEDDING_MODEL}')\"")
+            raise
+    
+    def generate_embeddings(self, texts: Union[str, List[str]], batch_size: int = None, show_progress: bool = True) -> np.ndarray:
+        """
+        Generate embeddings for given text(s) using local model
+        
+        Args:
+            texts: Single text string or list of text strings
+            batch_size: Maximum number of texts per batch (default from Config.EMBEDDING_BATCH_SIZE)
+            show_progress: Show progress bar
+            
+        Returns:
+            numpy array of embeddings
+        """
+        if isinstance(texts, str):
+            texts = [texts]
+        
+        if batch_size is None:
+            batch_size = Config.EMBEDDING_BATCH_SIZE
+        
+        try:
+            # Preprocess texts for E5 model (add prefix for better performance)
+            processed_texts = [f"passage: {text}" for text in texts]
+            
+            print(f"  Generating {len(texts)} embeddings with {Config.EMBEDDING_MODEL}...")
+            
+            # Generate embeddings in batches
+            embeddings = self.model.encode(
+                processed_texts,
+                batch_size=batch_size,
+                show_progress_bar=show_progress,
+                convert_to_numpy=True,
+                normalize_embeddings=True  # Normalize for cosine similarity
+            )
+            
+            print(f"  ✓ Successfully generated {len(embeddings)} embeddings")
+            return embeddings
+            
+        except Exception as e:
+            print(f"Error generating embeddings: {e}")
             raise
     
     def generate_single_embedding(self, text: str) -> np.ndarray:
