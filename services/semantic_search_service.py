@@ -4,10 +4,10 @@ Service xử lý logic tìm kiếm ngữ nghĩa (semantic search) với vector e
 Kết hợp với filter theo danh sách ID từ PostGIS
 """
 import time
-from logic.route import RouteBuilder
+from radius_logic.route import RouteBuilder
 from retrieval.embeddings import EmbeddingGenerator
 from typing import List, Dict, Any, Optional, Tuple
-from logic.information_location import LocationInfoService
+from radius_logic.information_location import LocationInfoService
 from retrieval.qdrant_vector_store import QdrantVectorStore
 from qdrant_client.models import Filter, FieldCondition, MatchAny
 
@@ -126,7 +126,8 @@ class SemanticSearchService:
         self,
         query: str,
         id_list: List[str],
-        top_k: int = 10
+        top_k: int = 10,
+        spatial_results: Optional[List[Dict[str, Any]]] = None
     ) -> Dict[str, Any]:
         """
         Tìm kiếm địa điểm theo query ngữ nghĩa với filter ID (dùng cho combined search)
@@ -186,8 +187,30 @@ class SemanticSearchService:
             # ko cần vì redis lưu sẵn rồi 
             # ----------------------
             # Query DB để lấy thông tin đầy đủ
+            # db_start = time.time()
+            # locations_map = self.location_info_service.get_locations_by_ids(location_ids)
+            # print("locations_map", locations_map)
+            # print("location_ids", location_ids)
+            # db_time = time.time() - db_start
+            # print(f"⏱️  DB query: {db_time:.3f}s")
+
+            # ---------------------Bỏ query db----------------
             db_start = time.time()
-            locations_map = self.location_info_service.get_locations_by_ids(location_ids)
+            location_id_set = set(location_ids)  
+            locations_map = {
+                item["id"]: {
+                    "id": item["id"],
+                    "name": item["name"],
+                    "lat": item["lat"],
+                    "lon": item["lon"],
+                    "address": item["address"],
+                    "poi_type": item["poi_type"],
+                    "rating": item["rating"]
+                }
+                for item in spatial_results
+                if item["id"] in location_id_set
+            }
+            # print("locations_map", locations_map)
             db_time = time.time() - db_start
             print(f"⏱️  DB query: {db_time:.3f}s")
             
@@ -277,7 +300,7 @@ class SemanticSearchService:
                     "spatial_error": spatial_results.get("error"),
                     "results": []
                 }
-            # print(spatial_results)
+            # print(len(spatial_results["results"]))    
             # 2. Lấy danh sách ID từ spatial results
             id_list = [loc["id"] for loc in spatial_results["results"]]
             
@@ -300,7 +323,8 @@ class SemanticSearchService:
             semantic_results = self.search_by_query_with_filter(
                 query=semantic_query,
                 id_list=id_list,
-                top_k=top_k_semantic
+                top_k=top_k_semantic,
+                spatial_results = spatial_results["results"]
             )
             semantic_time = time.time() - semantic_start
             

@@ -19,7 +19,7 @@ def get_semantic_service():
     global _semantic_service_instance
     if _semantic_service_instance is None:
         # Fallback: nếu chưa init từ startup, init ngay
-        from Service.semantic_search_service import SemanticSearchService
+        from services.semantic_search_service import SemanticSearchService
         _semantic_service_instance = SemanticSearchService()
     return _semantic_service_instance
 

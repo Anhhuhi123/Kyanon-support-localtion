@@ -251,7 +251,6 @@ class LocationInfoService:
         # Bước 1: Check cache cho tất cả IDs (batch get)
         cache_keys = [self._get_cache_key(lid) for lid in location_ids]
         cached_results = self._get_many_from_cache(cache_keys)
-        
         # Bước 2: Tìm IDs chưa có trong cache
         missing_ids = [lid for lid in location_ids if lid not in cached_results]
         
@@ -298,12 +297,14 @@ class LocationInfoService:
                 }
             
             # Bước 5: Cache kết quả mới (batch set)
+            # print("db_results", db_results)
             if db_results:
                 self._set_many_cache(db_results)
             
             # Bước 6: Merge cached + DB results
             final_results = {**cached_results, **db_results}
-            
+            # print("final_results", final_results)
+        
             return final_results
             
         except Exception as e:
