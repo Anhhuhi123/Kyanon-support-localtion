@@ -4,81 +4,97 @@ from psycopg2.extras import execute_batch
 from config.config import Config
 
 
-def create_table_if_not_exists(conn):
-    """Tạo table poi_locations_uuid_test nếu chưa tồn tại"""
-    cursor = conn.cursor()
+UPSERT_SQL = """
+INSERT INTO public."PoiClean" (
+    id,
+    name,
+    address,
+    lat,
+    lon,
+    geom,
+    poi_type,
+    avg_stars,
+    total_reviews,
+    stay_time,
+    normalize_stars_reviews,
+    created_at,
+    "updatedAt",
+    "deletedAt"
+)
+VALUES (
+    %s, %s, %s, %s, %s,
+    ST_SetSRID(ST_MakePoint(%s, %s), 4326),
+    %s, %s, %s, %s, %s,
+    NOW(),
+    NOW(),
+    NULL
+)
+ON CONFLICT (id) DO UPDATE SET
+    name = EXCLUDED.name,
+    address = EXCLUDED.address,
+    lat = EXCLUDED.lat,
+    lon = EXCLUDED.lon,
+    geom = EXCLUDED.geom,
+    poi_type = EXCLUDED.poi_type,
+    avg_stars = EXCLUDED.avg_stars,
+    total_reviews = EXCLUDED.total_reviews,
+    stay_time = EXCLUDED.stay_time,
+    normalize_stars_reviews = EXCLUDED.normalize_stars_reviews,
+    "updatedAt" = NOW();
+"""
 
-    # Enable PostGIS
-    cursor.execute("""
-        CREATE EXTENSION IF NOT EXISTS postgis;
-    """)
 
-    # Create table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS poi_locations_uuid_test (
-            id UUID PRIMARY KEY,
-            name TEXT,
-            address TEXT,
-            lat DOUBLE PRECISION NOT NULL,
-            long DOUBLE PRECISION NOT NULL,
-            geom GEOMETRY(Point, 4326),
-            poi_type TEXT,
-            avg_star DOUBLE PRECISION,
-            total_reviews DOUBLE PRECISION,
-            normalize_stars_reviews DOUBLE PRECISION
-        );
-    """)
-
-    # Create spatial index
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS poi_locations_uuid_test_geom_idx
-        ON poi_locations_uuid_test USING GIST (geom);
-    """)
-
-    conn.commit()
-    cursor.close()
-    print("✓ Table poi_locations_uuid_test sẵn sàng")
-
-
-def import_csv_to_postgres(csv_file_path, batch_size=100):
-    """Import CSV vào PostgreSQL (upsert theo UUID)"""
+def import_csv_to_poi_clean(csv_file_path: str, batch_size: int = 500):
+    print(Config.get_db_connection_string())
     conn = psycopg2.connect(Config.get_db_connection_string())
 
+    total_rows = 0
+    skipped_rows = 0
+
     try:
-        create_table_if_not_exists(conn)
         cursor = conn.cursor()
 
         with open(csv_file_path, "r", encoding="utf-8-sig") as file:
             reader = csv.DictReader(file)
 
             batch_data = []
-            total_rows = 0
-            skipped_rows = 0
 
             for row in reader:
                 try:
-                    if not row.get("id") or not row.get("lat") or not row.get("long"):
+                    # Required fields
+                    if not row.get("id") or not row.get("lat") or not row.get("lon"):
                         skipped_rows += 1
                         continue
 
                     lat = float(row["lat"])
-                    long = float(row["long"])
+                    lon = float(row["lon"])
 
-                    avg_star = float(row["avg_score"]) if row.get("avg_score") else None
-                    total_reviews = float(row["total_reviews"]) if row.get("total_reviews") else None
-                    normalize_score = float(row["final_score"]) if row.get("final_score") else None
+                    # Validate coordinates
+                    if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+                        skipped_rows += 1
+                        continue
+
+                    avg_stars = float(row["avg_stars"]) if row.get("avg_stars") else None
+                    total_reviews = int(row["total_reviews"]) if row.get("total_reviews") else None
+                    stay_time = float(row["stay_time"]) if row.get("stay_time") else None
+                    normalize_score = (
+                        float(row["normalize_stars_reviews"])
+                        if row.get("normalize_stars_reviews")
+                        else None
+                    )
 
                     batch_data.append((
                         row["id"],
                         row.get("name"),
                         row.get("address"),
                         lat,
-                        long,
-                        long,  # longitude
-                        lat,   # latitude
+                        lon,
+                        lon,   # x for ST_MakePoint
+                        lat,   # y for ST_MakePoint
                         row.get("poi_type"),
-                        avg_star,
+                        avg_stars,
                         total_reviews,
+                        stay_time,
                         normalize_score
                     ))
 
@@ -87,11 +103,11 @@ def import_csv_to_postgres(csv_file_path, batch_size=100):
                         conn.commit()
                         total_rows += len(batch_data)
                         batch_data.clear()
-                        print(f"  Đã import {total_rows} records...")
+                        print(f"  ✓ Imported {total_rows} records...")
 
                 except Exception as e:
-                    print(f"⚠ Bỏ qua dòng lỗi: {e}")
                     skipped_rows += 1
+                    print(f"⚠ Skip row: {e}")
 
             if batch_data:
                 execute_batch(cursor, UPSERT_SQL, batch_data)
@@ -99,68 +115,56 @@ def import_csv_to_postgres(csv_file_path, batch_size=100):
                 total_rows += len(batch_data)
 
         cursor.close()
-        print("\n✓ IMPORT HOÀN TẤT")
+
+        print("\n🎉 IMPORT HOÀN TẤT")
         print(f"  - Thành công: {total_rows}")
         print(f"  - Bỏ qua: {skipped_rows}")
 
     except Exception as e:
         conn.rollback()
-        print(f"✗ Lỗi: {e}")
+        print(f"❌ IMPORT FAILED: {e}")
         raise
     finally:
         conn.close()
 
 
-UPSERT_SQL = """
-INSERT INTO poi_locations_uuid_test
-(id, name, address, lat, long, geom, poi_type, avg_star, total_reviews, normalize_stars_reviews)
-VALUES (
-    %s, %s, %s, %s, %s,
-    ST_SetSRID(ST_MakePoint(%s, %s), 4326),
-    %s, %s, %s, %s
-)
-ON CONFLICT (id) DO UPDATE SET
-    name = EXCLUDED.name,
-    address = EXCLUDED.address,
-    lat = EXCLUDED.lat,
-    long = EXCLUDED.long,
-    geom = EXCLUDED.geom,
-    poi_type = EXCLUDED.poi_type,
-    avg_star = EXCLUDED.avg_star,
-    total_reviews = EXCLUDED.total_reviews,
-    normalize_stars_reviews = EXCLUDED.normalize_stars_reviews;
-"""
-
-
-def verify_data(limit=5):
-    """Kiểm tra dữ liệu"""
+def verify_data(limit: int = 5):
     conn = psycopg2.connect(Config.get_db_connection_string())
     cursor = conn.cursor()
 
-    cursor.execute("SELECT COUNT(*) FROM poi_locations_uuid_test;")
-    print(f"\n📊 Tổng POI: {cursor.fetchone()[0]}")
-
     cursor.execute(f"""
-        SELECT id, name, lat, long, poi_type, avg_star, total_reviews,
-               normalize_stars_reviews, ST_AsText(geom)
-        FROM poi_locations_uuid_test
+        SELECT
+            id,
+            name,
+            lat,
+            lon,
+            poi_type,
+            avg_stars,
+            total_reviews,
+            stay_time,
+            normalize_stars_reviews,
+            ST_AsText(geom)
+        FROM public."PoiClean"
         LIMIT {limit};
     """)
 
-    print(f"\n📝 {limit} records mẫu:")
+    print(f"\n🧪 SAMPLE DATA ({limit} rows):")
     for r in cursor.fetchall():
-        print(f"- {r[1]} | ({r[2]}, {r[3]}) | {r[4]} | geom={r[8]}")
+        print(
+            f"- {r[1]} | ({r[2]}, {r[3]}) | "
+            f"⭐ {r[5]} | reviews={r[6]} | stay={r[7]} | geom={r[9]}"
+        )
 
     cursor.close()
     conn.close()
 
 
 if __name__ == "__main__":
-    csv_file = "viamo_full.csv"
+    csv_file = "./scripts/data_csv/data_clean_normalize.csv"
 
-    print("🚀 BẮT ĐẦU IMPORT POI")
-    print(f"📁 File: {csv_file}")
+    print("🚀 START IMPORT PoiClean")
+    print(f"📁 CSV: {csv_file}")
     print(f"🗄️ DB: {Config.DB_NAME}@{Config.DB_HOST}\n")
 
-    import_csv_to_postgres(csv_file, batch_size=100)
+    import_csv_to_poi_clean(csv_file, batch_size=500)
     verify_data(limit=5)

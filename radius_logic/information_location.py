@@ -192,11 +192,11 @@ class LocationInfoService:
                     id,
                     name,
                     lat,
-                    long,
+                    lon,
                     address,
                     poi_type,
                     normalize_stars_reviews
-                FROM poi_locations_uuid
+                FROM public."PoiClean"
                 WHERE id = %s::uuid
             """
             
@@ -270,11 +270,11 @@ class LocationInfoService:
                     id,
                     name,
                     lat,
-                    long,
+                    lon,
                     address,
                     poi_type,
                     normalize_stars_reviews
-                FROM poi_locations_uuid
+                FROM public."PoiClean"
                 WHERE id = ANY(%s::uuid[])
             """
             

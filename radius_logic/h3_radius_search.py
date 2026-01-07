@@ -201,11 +201,11 @@ class H3RadiusSearch:
                     poi_type,
                     address,
                     lat,
-                    long,
+                    lon,
                     COALESCE(normalize_stars_reviews, 0.5) AS rating
-                FROM poi_locations_uuid
+                FROM public."PoiClean"
                 WHERE lat BETWEEN %s AND %s
-                  AND long BETWEEN %s AND %s
+                  AND lon BETWEEN %s AND %s
             """
 
             # query = """

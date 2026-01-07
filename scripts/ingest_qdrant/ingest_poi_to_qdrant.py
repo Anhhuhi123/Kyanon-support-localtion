@@ -28,7 +28,7 @@ def fetch_poi_data_from_db():
     # Query để lấy id và poi_type
     query = """
         SELECT id, poi_type 
-        FROM poi_locations 
+        FROM public."PoiClean" 
         WHERE poi_type IS NOT NULL AND poi_type != ''
         ORDER BY id
     """
