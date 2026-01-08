@@ -11,9 +11,7 @@ services:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - REDIS_DB=0
-      # Thêm các biến môi trường khác nếu cần
-      # - DB_HOST=your_db_host
-      # - DB_PORT=5432
+      # Override các biến môi trường từ .env nếu cần
     depends_on:
       redis:
         condition: service_healthy
