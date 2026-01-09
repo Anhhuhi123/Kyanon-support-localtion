@@ -347,6 +347,193 @@ class SemanticSearchService:
                 "results": []
             }
     
+    def search_combined_multi_queries(
+        self,
+        latitude: float,
+        longitude: float,
+        transportation_mode: str,
+        semantic_query: str,
+        top_k_semantic: int = 10,
+        customer_like: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Tìm kiếm kết hợp với hỗ trợ nhiều queries phân cách bằng dấu phẩy
+        Mỗi query sẽ truy xuất Qdrant riêng và lấy top 10, đánh dấu category
+        
+        Args:
+            latitude: Vĩ độ
+            longitude: Kinh độ
+            transportation_mode: Phương tiện di chuyển
+            semantic_query: Query ngữ nghĩa (có thể nhiều queries phân cách bằng ,)
+            top_k_semantic: Số lượng kết quả mỗi query (mặc định 10)
+            
+        Returns:
+            Dict chứa tất cả POI từ các queries, mỗi POI có thêm field 'category'
+        """
+        from services.location_service import LocationService
+        from config.config import Config
+        
+        try:
+            total_start = time.time()
+            
+            # Split queries bằng dấu phẩy và trim whitespace
+            queries = [q.strip() for q in semantic_query.split(',') if q.strip()]
+            
+            # Nếu customer_like=True và CHỈ có 1 query là "Food & Local Flavours", tự động thêm "Entertainments"
+            if customer_like:
+                if len(queries) == 1 and queries[0] == "Food & Local Flavours":
+                    queries.append("Culture & heritage")
+                    print(f"✨ CustomerLike=True + chỉ có 'Food & Local Flavours' → Tự động thêm 'Entertainments'")
+            
+            if not queries:
+                return {
+                    "status": "error",
+                    "error": "No valid queries provided",
+                    "results": []
+                }
+            
+            print(f"\n🔍 Processing {len(queries)} queries: {queries}")
+            
+            # 1. Spatial search (chỉ 1 lần)
+            print(f"\n🔍 Step 1: Spatial search...")
+            location_service = LocationService(Config.get_db_connection_string())
+            spatial_results = location_service.find_nearest_locations(
+                latitude=latitude,
+                longitude=longitude,
+                transportation_mode=transportation_mode
+            )
+            
+            if spatial_results["status"] != "success":
+                return {
+                    "status": "error",
+                    "error": "Spatial search failed",
+                    "spatial_error": spatial_results.get("error"),
+                    "results": []
+                }
+            
+            id_list = [loc["id"] for loc in spatial_results["results"]]
+            
+            if not id_list:
+                return {
+                    "status": "success",
+                    "message": "No locations found in spatial search",
+                    "query": semantic_query,
+                    "spatial_info": {
+                        "radius_used": spatial_results.get("radius_used"),
+                        "total_spatial_locations": 0
+                    },
+                    "results": []
+                }
+            
+            # 2. Semantic search cho từng query
+            # Dùng dict để track POI tốt nhất cho mỗi ID (chọn similarity cao nhất)
+            poi_best_match = {}  # {place_id: {"place": place_dict, "similarity": score, "category": ..., "category_index": ...}}
+            
+            # Track timing và số POI của từng query
+            query_details = []  # [{"query": str, "pois_count": int, "time_seconds": float, "embedding_seconds": float, "qdrant_seconds": float}]
+            total_embedding_time = 0
+            total_qdrant_time = 0
+            
+            for idx, query in enumerate(queries):
+                print(f"\n🔍 Step 2.{idx+1}: Semantic search for '{query}'...")
+                semantic_start = time.time()
+                
+                semantic_results = self.search_by_query_with_filter(
+                    query=query,
+                    id_list=id_list,
+                    top_k=top_k_semantic,
+                    spatial_results=spatial_results["results"]
+                )
+                
+                semantic_time = time.time() - semantic_start
+                
+                # Lấy timing detail từ kết quả
+                timing_detail = semantic_results.get("timing_detail", {})
+                embed_time = timing_detail.get("embedding_seconds", 0)
+                qdrant_time = timing_detail.get("qdrant_search_seconds", 0)
+                
+                total_embedding_time += embed_time
+                total_qdrant_time += qdrant_time
+                
+                results_count = len(semantic_results.get('results', []))
+                print(f"   Query '{query}' took {semantic_time:.3f}s, found {results_count} results")
+                
+                # Track detail của query này
+                query_details.append({
+                    "query": query,
+                    "pois_count": results_count,
+                    "time_seconds": round(semantic_time, 3),
+                    "embedding_seconds": round(embed_time, 3),
+                    "qdrant_search_seconds": round(qdrant_time, 3)
+                })
+                
+                # Với mỗi POI, chỉ giữ lại option có similarity cao nhất
+                for place in semantic_results.get('results', []):
+                    place_id = place.get('id')
+                    current_similarity = place.get('score', 0.0)
+                    
+                    if place_id not in poi_best_match:
+                        # Lần đầu gặp POI này
+                        poi_best_match[place_id] = {
+                            "place": place,
+                            "similarity": current_similarity,
+                            "category": query,
+                            "category_index": idx
+                        }
+                    else:
+                        # Đã có rồi, so sánh similarity
+                        existing_similarity = poi_best_match[place_id]["similarity"]
+                        if current_similarity > existing_similarity:
+                            # Similarity mới cao hơn -> thay thế
+                            poi_best_match[place_id] = {
+                                "place": place,
+                                "similarity": current_similarity,
+                                "category": query,
+                                "category_index": idx
+                            }
+            
+            # Chuyển dict về list và gán category
+            all_results = []
+            for place_id, data in poi_best_match.items():
+                place = data["place"]
+                place['category'] = data["category"]
+                place['category_index'] = data["category_index"]
+                all_results.append(place)
+                # kiểm tra xem thêm vào đúng chưa
+                # print(f" - Place ID {place_id} assigned to category '{data['category']}' with similarity {data['similarity']:.4f}")
+            
+            total_time = time.time() - total_start
+            
+            print(f"\n✅ Total: {len(all_results)} unique POIs from {len(queries)} queries in {total_time:.3f}s")
+            print(f"   (Mỗi POI chỉ thuộc 1 category có similarity cao nhất)")
+            
+            return {
+                "status": "success",
+                "query": semantic_query,
+                "queries_count": len(queries),
+                "query_details": query_details,  # Thêm thông tin chi tiết mỗi query
+                "spatial_info": {
+                    "transportation_mode": spatial_results.get("transportation_mode"),
+                    "radius_used": spatial_results.get("radius_used"),
+                    "total_spatial_locations": len(id_list),
+                    "spatial_execution_time": spatial_results.get("execution_time_seconds")
+                },
+                "total_results": len(all_results),
+                "total_execution_time_seconds": round(total_time, 3),
+                "timing_detail": {
+                    "embedding_seconds": round(total_embedding_time, 3),
+                    "qdrant_search_seconds": round(total_qdrant_time, 3)
+                },
+                "results": all_results
+            }
+            
+        except Exception as e:
+            return {
+                "status": "error",
+                "error": str(e),
+                "results": []
+            }
+    
     def search_combined_with_routes(
         self,
         latitude: float,
@@ -356,7 +543,8 @@ class SemanticSearchService:
         max_time_minutes: int = 180,
         target_places: int = 5,
         max_routes: int = 3,
-        top_k_semantic: int = 10
+        top_k_semantic: int = 10,
+        customer_like: bool = False
     ) -> Dict[str, Any]:
         """
         Tìm kiếm kết hợp + Xây dựng lộ trình
@@ -382,13 +570,14 @@ class SemanticSearchService:
         try:
             total_start = time.time()
             
-            # 1. Spatial + Semantic search
-            search_result = self.search_combined(
+            # 1. Spatial + Semantic search (hỗ trợ nhiều queries)
+            search_result = self.search_combined_multi_queries(
                 latitude=latitude,
                 longitude=longitude,
                 transportation_mode=transportation_mode,
                 semantic_query=semantic_query,
-                top_k_semantic=top_k_semantic
+                top_k_semantic=top_k_semantic,
+                customer_like=customer_like
             )
             
             if search_result["status"] != "success":

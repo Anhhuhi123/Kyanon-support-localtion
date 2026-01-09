@@ -61,19 +61,19 @@ class Config:
     # k=20: ~5.8km (1261 cells), k=30: ~8.6km (2791 cells), k=40: ~11.5km (4921 cells)
     TRANSPORTATION_CONFIG: Dict[str, Dict[str, int]] = {
         TransportationMode.WALKING: {
-            "h3_k_ring": 15         # k=15: ~4.3km coverage (721 cells)
+            "h3_k_ring": 10         # k=15: ~2.8km coverage (721 cells)
         },
         TransportationMode.BICYCLING: {
             "h3_k_ring": 30          # k=30: ~8.6km coverage (2791 cells)
         },
         TransportationMode.TRANSIT: {
-            "h3_k_ring": 40          # k=40: ~11.5km coverage (4921 cells)
+            "h3_k_ring": 35          # k=35: ~10km coverage (4921 cells)
         },
         TransportationMode.FLEXIBLE: {
-            "h3_k_ring": 60          # k=60: ~17.2km coverage (10981 cells)
+            "h3_k_ring": 40          # k=40: ~11.5km coverage (4921 cells)
         },
         TransportationMode.DRIVING: {
-            "h3_k_ring": 100         # k=100: ~28.7km coverage (30301 cells)
+            "h3_k_ring": 80         # k=80: ~23km coverage (30301 cells)
         }
     }
     

@@ -126,7 +126,8 @@ class RouteBuilder:
         distance_matrix: List[List[float]],
         max_distance: float,
         is_first: bool = False,
-        is_last: bool = False
+        is_last: bool = False,
+        start_pos_index: Optional[int] = None
     ) -> float:
         """
         Tính điểm kết hợp: distance + similarity + rating
@@ -158,8 +159,12 @@ class RouteBuilder:
         # rating (normalize_stars_reviews từ DB, đã normalize 0-1)
         rating = float(place.get("rating") or 0.5)
         
-        # Khoảng cách từ current_pos đến place (index trong matrix = place_idx + 1)
-        distance_km = distance_matrix[current_pos][place_idx + 1]
+        # Nếu là POI cuối, tính khoảng cách từ place đến user (index 0)
+        # Ngược lại tính khoảng cách từ current_pos đến place
+        if is_last:
+            distance_km = distance_matrix[place_idx + 1][0]  # Khoảng cách place -> user
+        else:
+            distance_km = distance_matrix[current_pos][place_idx + 1]  # Khoảng cách current -> place
         
         # Normalize distance (đảo ngược: gần = điểm cao)
         normalized_distance = distance_km / max_distance if max_distance > 0 else 0
@@ -215,7 +220,6 @@ class RouteBuilder:
         
         # Tính radius (khoảng cách xa nhất từ user)
         max_radius = max(distance_matrix[0][1:])
-        return_threshold = 0.2 * max_radius
         
         # 2. Chọn điểm đầu tiên
         route = []
@@ -259,13 +263,44 @@ class RouteBuilder:
         total_stay_time += stay_time
         current_pos = best_first + 1
         
-        # 3. Chọn các điểm tiếp theo (trừ điểm cuối)
+        # 3. Chọn các điểm tiếp theo (trừ điểm cuối) - BẮT BUỘC XEN KẼ CATEGORY
+        # Track thứ tự category đã dùng
+        category_sequence = []
+        if 'category' in places[best_first]:
+            category_sequence.append(places[best_first].get('category'))
+        
+        # Lấy danh sách tất cả category có trong places
+        all_categories = list(set(place.get('category') for place in places if 'category' in place))
+        
+        # target_places là số POI cần đi (không tính user)
+        # Đã có 1 POI đầu, cần chọn (target_places - 2) POI giữa, và 1 POI cuối
         for step in range(target_places - 2):
             best_next = None
             best_next_score = -1
             
+            # Xác định category BẮT BUỘC cho POI tiếp theo (xen kẽ tuần hoàn)
+            required_category = None
+            if category_sequence and all_categories:
+                # Lấy category của POI vừa thêm
+                last_category = category_sequence[-1]
+                # Tìm index của category hiện tại trong danh sách
+                try:
+                    current_idx = all_categories.index(last_category)
+                    # Chọn category tiếp theo (tuần hoàn)
+                    next_idx = (current_idx + 1) % len(all_categories)
+                    required_category = all_categories[next_idx]
+                except ValueError:
+                    # Nếu không tìm thấy, lấy category đầu tiên
+                    required_category = all_categories[0] if all_categories else None
+            
+            # Lần 1: Tìm POI với category BẮT BUỘC
+            candidates_with_required_category = []
             for i, place in enumerate(places):
                 if i in visited:
+                    continue
+                
+                # Chỉ xét POI có đúng category yêu cầu
+                if required_category and place.get('category') != required_category:
                     continue
                 
                 combined = self.calculate_combined_score(
@@ -290,9 +325,45 @@ class RouteBuilder:
                 if temp_travel + temp_stay + estimated_return > max_time_minutes:
                     continue
                 
-                if combined > best_next_score:
-                    best_next_score = combined
-                    best_next = i
+                candidates_with_required_category.append((i, combined))
+            
+            # Chọn POI tốt nhất trong category yêu cầu
+            if candidates_with_required_category:
+                candidates_with_required_category.sort(key=lambda x: x[1], reverse=True)
+                best_next = candidates_with_required_category[0][0]
+                best_next_score = candidates_with_required_category[0][1]
+            
+            # Lần 2: Nếu không tìm thấy POI với category yêu cầu, xét tất cả POI còn lại
+            if best_next is None:
+                for i, place in enumerate(places):
+                    if i in visited:
+                        continue
+                    
+                    combined = self.calculate_combined_score(
+                        place_idx=i,
+                        current_pos=current_pos,
+                        places=places,
+                        distance_matrix=distance_matrix,
+                        max_distance=max_distance
+                    )
+                    
+                    # Kiểm tra thời gian khả thi
+                    temp_travel = total_travel_time + self.calculate_travel_time(
+                        distance_matrix[current_pos][i + 1],
+                        transportation_mode
+                    )
+                    temp_stay = total_stay_time + self.get_stay_time(places[i].get("poi_type", ""))
+                    estimated_return = self.calculate_travel_time(
+                        distance_matrix[i + 1][0],
+                        transportation_mode
+                    )
+                    
+                    if temp_travel + temp_stay + estimated_return > max_time_minutes:
+                        continue
+                    
+                    if combined > best_next_score:
+                        best_next_score = combined
+                        best_next = i
             
             if best_next is None:
                 break
@@ -300,6 +371,9 @@ class RouteBuilder:
             # Thêm điểm tiếp theo
             route.append(best_next)
             visited.add(best_next)
+            if 'category' in places[best_next]:
+                category_sequence.append(places[best_next].get('category'))
+            
             travel_time = self.calculate_travel_time(
                 distance_matrix[current_pos][best_next + 1],
                 transportation_mode
@@ -309,72 +383,57 @@ class RouteBuilder:
             total_stay_time += stay_time
             current_pos = best_next + 1
         
-        # 4. Chọn điểm cuối (gần user)
+        # 4. Chọn điểm cuối (gần user) - với tăng dần bán kính nếu không tìm thấy
         best_last = None
         best_last_score = -1
         
-        for i, place in enumerate(places):
-            if i in visited:
-                continue
-            
-            # Kiểm tra khoảng cách đến user
-            dist_to_user = distance_matrix[i + 1][0]
-            if dist_to_user > return_threshold:
-                continue
-            
-            # Kiểm tra thời gian
-            temp_travel = total_travel_time + self.calculate_travel_time(
-                distance_matrix[current_pos][i + 1],
-                transportation_mode
-            )
-            temp_stay = total_stay_time + self.get_stay_time(places[i].get("poi_type", ""))
-            return_time = self.calculate_travel_time(dist_to_user, transportation_mode)
-            
-            if temp_travel + temp_stay + return_time > max_time_minutes:
-                continue
-            
-            # POI cuối: ưu tiên gần user
-            combined = self.calculate_combined_score(
-                place_idx=i,
-                current_pos=current_pos,
-                places=places,
-                distance_matrix=distance_matrix,
-                max_distance=max_distance,
-                is_last=True
-            )
-            
-            if combined > best_last_score:
-                best_last_score = combined
-                best_last = i
+        # Thử các mức bán kính: 30%, 50%, 70%, 90%, 110%, 130%
+        radius_thresholds = [0.2, 0.4, 0.6, 0.8, 1.0]
         
-        # Nếu không tìm được điểm cuối gần user, thử tìm bất kỳ điểm nào
-        if best_last is None:
+        for threshold_multiplier in radius_thresholds:
+            current_threshold = threshold_multiplier * max_radius
+            
             for i, place in enumerate(places):
                 if i in visited:
                     continue
                 
+                # Kiểm tra khoảng cách đến user
+                dist_to_user = distance_matrix[i + 1][0]
+                if dist_to_user > current_threshold:
+                    continue
+                
+                # Kiểm tra thời gian
                 temp_travel = total_travel_time + self.calculate_travel_time(
                     distance_matrix[current_pos][i + 1],
                     transportation_mode
                 )
                 temp_stay = total_stay_time + self.get_stay_time(places[i].get("poi_type", ""))
-                return_time = self.calculate_travel_time(
-                    distance_matrix[i + 1][0],
-                    transportation_mode
-                )
+                return_time = self.calculate_travel_time(dist_to_user, transportation_mode)
                 
                 if temp_travel + temp_stay + return_time > max_time_minutes:
                     continue
                 
-                combined = places[i]["score"]
+                # POI cuối: ưu tiên gần user
+                combined = self.calculate_combined_score(
+                    place_idx=i,
+                    current_pos=current_pos,
+                    places=places,
+                    distance_matrix=distance_matrix,
+                    max_distance=max_distance,
+                    is_last=True
+                )
+                
                 if combined > best_last_score:
                     best_last_score = combined
                     best_last = i
-        
-        if best_last is None:
-            if len(route) < 3:
-                return None
-        else:
+            
+            # Nếu tìm được POI cuối, dừng lại
+            if best_last is not None:
+                print(f"🎯 Tìm được POI cuối ở mức {threshold_multiplier*100:.0f}% bán kính ({current_threshold:.0f}km)")
+                break
+    
+        # Thêm POI cuối
+        if best_last is not None:
             route.append(best_last)
             visited.add(best_last)
             travel_time = self.calculate_travel_time(
@@ -486,7 +545,12 @@ class RouteBuilder:
         distance_matrix = self.build_distance_matrix(user_location, places)
         max_distance = max(max(row) for row in distance_matrix)
         
-        # Tìm top 3 điểm xuất phát có combined_score cao nhất
+        # Kiểm tra categories có trong places
+        all_categories = list(set(place.get('category') for place in places if 'category' in place))
+        has_food = "Food & Local Flavours" in all_categories
+        should_prioritize_food = has_food and len(all_categories) <= 2
+        
+        # Tìm top điểm xuất phát có combined_score cao nhất
         first_candidates = []
         for i, place in enumerate(places):
             combined = self.calculate_combined_score(
@@ -496,14 +560,30 @@ class RouteBuilder:
                 distance_matrix=distance_matrix,
                 max_distance=max_distance
             )
-            first_candidates.append((i, combined))
+            first_candidates.append((i, combined, place.get('category')))
         
         first_candidates.sort(key=lambda x: x[1], reverse=True)
         
         # Lấy địa điểm có score cao nhất làm điểm đầu tiên BẮT BUỘC
-        best_first_place = first_candidates[0][0]  # Index của POI có score cao nhất
+        # NHƯNG: Nếu có Food và chỉ có 1-2 options, BẮT BUỘC chọn Food đầu tiên
+        best_first_place = None
         
-        print(f"🎯 Điểm đầu tiên BẮT BUỘC (score cao nhất): {places[best_first_place]['name']} (score={places[best_first_place]['score']})")
+        if should_prioritize_food:
+            # Tìm POI "Food & Local Flavours" có score cao nhất
+            food_candidates = [
+                (idx, score) for idx, score, cat in first_candidates 
+                if cat == "Food & Local Flavours"
+            ]
+            if food_candidates:
+                best_first_place = food_candidates[0][0]
+                print(f"🍽️  BẮT BUỘC chọn 'Food & Local Flavours' đầu tiên: {places[best_first_place]['name']} (score={places[best_first_place]['score']:.3f})")
+            else:
+                best_first_place = first_candidates[0][0]
+                print(f"⚠️ Không tìm thấy 'Food & Local Flavours', chọn POI cao nhất: {places[best_first_place]['name']}")
+        else:
+            # Trường hợp bình thường: chọn POI có score cao nhất
+            best_first_place = first_candidates[0][0]
+            print(f"🎯 Điểm đầu tiên BẮT BUỘC (score cao nhất): {places[best_first_place]['name']} (score={places[best_first_place]['score']:.3f})")
         
         # Xây dựng route đầu tiên từ điểm có score cao nhất
         route_1 = self.build_single_route_greedy(
@@ -526,7 +606,7 @@ class RouteBuilder:
             # Thử các điểm xuất phát khác (vẫn ưu tiên score cao)
             num_candidates_to_try = min(len(places), max(10, max_routes * 3))
             
-            for first_idx, _ in first_candidates[1:num_candidates_to_try]:
+            for first_idx, _, _ in first_candidates[1:num_candidates_to_try]:
                 # Dừng nếu đã đủ số routes
                 if len(all_routes) >= max_routes:
                     break

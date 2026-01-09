@@ -154,7 +154,8 @@ async def route_search(request: RouteSearchRequest):
             max_time_minutes=request.max_time_minutes,
             target_places=request.target_places,
             max_routes=request.max_routes,
-            top_k_semantic=request.top_k_semantic
+            top_k_semantic=request.top_k_semantic,
+            customer_like=request.customer_like or False
         )
         
         if result["status"] == "error":
