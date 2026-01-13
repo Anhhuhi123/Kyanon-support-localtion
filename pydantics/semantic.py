@@ -23,7 +23,7 @@ class RouteSearchRequest(BaseModel):
     longitude: float = Field(..., description="Kinh độ user", json_schema_extra={"example": 106.703535})
     transportation_mode: str = Field(..., description="Phương tiện (WALKING/BICYCLING/TRANSIT/FLEXIBLE/DRIVING)", json_schema_extra={"example": "WALKING"})
     transportation_type: Optional[str] = Field(None, description="SOLO, GROUP, ...", json_schema_extra={"example": "SOLO"})
-    semantic_query: str = Field(..., description="Câu query ngữ nghĩa (nhu cầu người dùng)", json_schema_extra={"example": "Food & Local Flavor"})
+    semantic_query: str = Field(..., description="Câu query ngữ nghĩa (nhu cầu người dùng)", json_schema_extra={"example": "Food & Local Flavours"})
     customer_like: Optional[bool] = Field(None, description="Tự động thêm Entertainment nếu True", json_schema_extra={"example": True})
     current_time: Optional[datetime] = Field(None, description="Thời điểm hiện tại của user (ISO format). Nếu None, không lọc theo thời gian mở cửa", json_schema_extra={"example": "2026-01-13T08:00:00"})
     max_time_minutes: Optional[int] = Field(180, description="Thời gian tối đa (phút)", json_schema_extra={"example": 300})
