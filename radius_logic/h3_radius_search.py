@@ -202,7 +202,8 @@ class H3RadiusSearch:
                     address,
                     lat,
                     lon,
-                    COALESCE(normalize_stars_reviews, 0.5) AS rating
+                    COALESCE(normalize_stars_reviews, 0.5) AS rating,
+                    open_hours
                 FROM public."PoiClean"
                 WHERE lat BETWEEN %s AND %s
                   AND lon BETWEEN %s AND %s
@@ -241,7 +242,8 @@ class H3RadiusSearch:
                     "address": row[3],
                     "lat": row[4],
                     "lon": row[5],
-                    "rating": round(float(row[6] or 0.5), 3)
+                    "rating": round(float(row[6] or 0.5), 3),
+                    "open_hours": row[7] if row[7] else []
                 }
                 
                 # Tính H3 cell mà POI này thuộc về

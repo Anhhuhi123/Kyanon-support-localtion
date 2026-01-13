@@ -3,6 +3,7 @@ Route Builder Service
 Xây dựng lộ trình tối ưu từ danh sách địa điểm sử dụng thuật toán Greedy
 """
 import math
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
 from config.config import Config
 
@@ -519,7 +520,8 @@ class RouteBuilder:
         transportation_mode: str,
         max_time_minutes: int,
         target_places: int = 5,
-        max_routes: int = 3
+        max_routes: int = 3,
+        current_datetime: Optional[datetime] = None
     ) -> List[Dict[str, Any]]:
         """
         Xây dựng nhiều lộ trình (top 3) bằng cách thử các điểm xuất phát khác nhau
@@ -531,9 +533,10 @@ class RouteBuilder:
             max_time_minutes: Thời gian tối đa
             target_places: Số địa điểm mỗi lộ trình
             max_routes: Số lộ trình tối đa (mặc định 3)
+            current_datetime: Thời điểm bắt đầu route (để validate opening hours)
             
         Returns:
-            List các lộ trình tốt nhất (đã loại bỏ trùng lặp)
+            List các lộ trình tốt nhất (đã loại bỏ trùng lặp và validate thời gian mở cửa)
         """
         if not places:
             return []
@@ -645,13 +648,52 @@ class RouteBuilder:
         for idx, route in enumerate(all_routes, 1):
             # Thêm route_id và order (số thứ tự di chuyển) vào mỗi place
             places_with_metadata = []
+            current_time_in_route = current_datetime  # Track thời gian trong route
+            
             for order, place in enumerate(route["places"], 1):
                 place_data = place.copy()
                 place_data["route_id"] = idx
                 place_data["order"] = order  # Số thứ tự di chuyển (1, 2, 3, ...)
+                
+                # Thêm opening hours info nếu có current_datetime
+                if current_datetime:
+                    from utils.time_utils import TimeUtils
+                    
+                    # Tính thời gian đến POI này
+                    if order == 1:
+                        # POI đầu tiên: travel time từ user
+                        travel_time = place_data.get("travel_time_minutes", 0)
+                        arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
+                    else:
+                        # POI tiếp theo: cộng dồn travel + stay time
+                        prev_place = route["places"][order - 2]
+                        travel_time = place_data.get("travel_time_minutes", 0)
+                        stay_time = prev_place.get("stay_time_minutes", self.DEFAULT_STAY_TIME)
+                        current_time_in_route = TimeUtils.get_arrival_time(
+                            current_time_in_route, 
+                            stay_time
+                        )
+                        arrival_time = TimeUtils.get_arrival_time(
+                            current_time_in_route, 
+                            travel_time
+                        )
+                    
+                    # Lấy opening hours cho ngày đó
+                    opening_hours_today = TimeUtils.get_opening_hours_for_day(
+                        place_data.get("open_hours", []),
+                        arrival_time
+                    )
+                    
+                    # Thêm vào response
+                    place_data["arrival_time"] = arrival_time.strftime('%Y-%m-%d %H:%M:%S')
+                    place_data["opening_hours_today"] = opening_hours_today
+                    
+                    # Update current time cho POI tiếp theo
+                    current_time_in_route = arrival_time
+                
                 places_with_metadata.append(place_data)
             
-            result.append({
+            route_data = {
                 "route_id": idx,
                 "total_time_minutes": route["total_time_minutes"],
                 "travel_time_minutes": route["travel_time_minutes"],
@@ -660,6 +702,30 @@ class RouteBuilder:
                 "avg_score": route["avg_score"],
                 "efficiency": route["efficiency"],
                 "places": places_with_metadata
-            })
+            }
+            
+            # Validate thời gian mở cửa nếu có current_datetime
+            if current_datetime:
+                from utils.time_utils import TimeUtils
+                
+                # Validate route với opening hours
+                is_valid, errors = TimeUtils.validate_route_timing(
+                    route=places_with_metadata,
+                    start_datetime=current_datetime,
+                    transportation_mode=transportation_mode,
+                    distance_matrix=distance_matrix,
+                    default_stay_minutes=self.DEFAULT_STAY_TIME
+                )
+                
+                route_data["opening_hours_validated"] = True
+                route_data["is_valid_timing"] = is_valid
+                
+                if not is_valid:
+                    route_data["timing_warnings"] = errors
+                    print(f"⚠️ Route {idx} has timing issues:")
+                    for error in errors:
+                        print(f"   - {error}")
+            
+            result.append(route_data)
         
         return result

@@ -4,9 +4,11 @@ Service xử lý logic tìm kiếm ngữ nghĩa (semantic search) với vector e
 Kết hợp với filter theo danh sách ID từ PostGIS
 """
 import time
+from datetime import datetime
+from typing import Optional
 from radius_logic.route import RouteBuilder
 from retrieval.embeddings import EmbeddingGenerator
-from typing import List, Dict, Any, Optional, Tuple
+from typing import List, Dict, Any, Tuple
 from radius_logic.information_location import LocationInfoService
 from retrieval.qdrant_vector_store import QdrantVectorStore
 from qdrant_client.models import Filter, FieldCondition, MatchAny
@@ -354,11 +356,14 @@ class SemanticSearchService:
         transportation_mode: str,
         semantic_query: str,
         top_k_semantic: int = 10,
-        customer_like: bool = False
+        customer_like: bool = False,
+        current_datetime: Optional[datetime] = None,
+        max_time_minutes: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Tìm kiếm kết hợp với hỗ trợ nhiều queries phân cách bằng dấu phẩy
         Mỗi query sẽ truy xuất Qdrant riêng và lấy top 10, đánh dấu category
+        Có thể lọc theo thời gian mở cửa
         
         Args:
             latitude: Vĩ độ
@@ -366,6 +371,9 @@ class SemanticSearchService:
             transportation_mode: Phương tiện di chuyển
             semantic_query: Query ngữ nghĩa (có thể nhiều queries phân cách bằng ,)
             top_k_semantic: Số lượng kết quả mỗi query (mặc định 10)
+            customer_like: Tự động thêm "Culture & heritage" nếu chỉ có "Food & Local Flavours"
+            current_datetime: Thời điểm hiện tại của user (None = không lọc)
+            max_time_minutes: Thời gian tối đa user có (None = không lọc)
             
         Returns:
             Dict chứa tất cả POI từ các queries, mỗi POI có thêm field 'category'
@@ -394,13 +402,15 @@ class SemanticSearchService:
             
             print(f"\n🔍 Processing {len(queries)} queries: {queries}")
             
-            # 1. Spatial search (chỉ 1 lần)
+            # 1. Spatial search (chỉ 1 lần) với tùy chọn lọc theo thời gian
             print(f"\n🔍 Step 1: Spatial search...")
             location_service = LocationService(Config.get_db_connection_string())
             spatial_results = location_service.find_nearest_locations(
                 latitude=latitude,
                 longitude=longitude,
-                transportation_mode=transportation_mode
+                transportation_mode=transportation_mode,
+                current_datetime=current_datetime,
+                max_time_minutes=max_time_minutes
             )
             
             if spatial_results["status"] != "success":
@@ -544,15 +554,16 @@ class SemanticSearchService:
         target_places: int = 5,
         max_routes: int = 3,
         top_k_semantic: int = 10,
-        customer_like: bool = False
+        customer_like: bool = False,
+        current_datetime: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """
-        Tìm kiếm kết hợp + Xây dựng lộ trình
+        Tìm kiếm kết hợp + Xây dựng lộ trình với tùy chọn lọc theo thời gian mở cửa
         
         Workflow:
-        1. Spatial search (PostGIS) → TẤT CẢ địa điểm gần (>= 50)
+        1. Spatial search (PostGIS) → TẤT CẢ địa điểm gần (>= 50), có thể lọc theo thời gian
         2. Semantic search (Qdrant) → Top 10 địa điểm phù hợp nhất
-        3. Route building (Greedy) → Top 3 lộ trình tốt nhất
+        3. Route building (Greedy) → Top 3 lộ trình tốt nhất, validate thời gian mở cửa
         
         Args:
             latitude: Vĩ độ user
@@ -563,21 +574,26 @@ class SemanticSearchService:
             target_places: Số địa điểm mỗi lộ trình
             max_routes: Số lộ trình tối đa
             top_k_semantic: Số địa điểm từ semantic search
+            customer_like: Tự động thêm "Culture & heritage" nếu chỉ có "Food & Local Flavours"
+            current_datetime: Thời điểm hiện tại của user (None = không lọc theo thời gian)
             
         Returns:
-            Dict chứa routes (top 3 lộ trình) và metadata
+            Dict chứa routes (top 3 lộ trình) và metadata, bao gồm thông tin validate thời gian
         """
         try:
             total_start = time.time()
             
             # 1. Spatial + Semantic search (hỗ trợ nhiều queries)
+            # Pass current_datetime và max_time_minutes để lọc POI theo thời gian
             search_result = self.search_combined_multi_queries(
                 latitude=latitude,
                 longitude=longitude,
                 transportation_mode=transportation_mode,
                 semantic_query=semantic_query,
                 top_k_semantic=top_k_semantic,
-                customer_like=customer_like
+                customer_like=customer_like,
+                current_datetime=current_datetime,
+                max_time_minutes=max_time_minutes
             )
             
             if search_result["status"] != "success":
@@ -599,7 +615,7 @@ class SemanticSearchService:
                     "routes": []
                 }
             
-            # 2. Xây dựng lộ trình
+            # 2. Xây dựng lộ trình với validation thời gian mở cửa
             print(f"\n🔍 Step 3: Building routes from {len(semantic_places)} places...")
             route_start = time.time()
             
@@ -610,7 +626,8 @@ class SemanticSearchService:
                 transportation_mode=transportation_mode,
                 max_time_minutes=max_time_minutes,
                 target_places=target_places,
-                max_routes=max_routes
+                max_routes=max_routes,
+                current_datetime=current_datetime  # Pass datetime để validate opening hours
             )
             
             route_time = time.time() - route_start
