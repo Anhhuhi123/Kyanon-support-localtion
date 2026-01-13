@@ -114,6 +114,131 @@ class TimeUtils:
         return False  # Không tìm thấy thông tin ngày → giả sử đóng cửa
     
     @staticmethod
+    def has_enough_time_to_stay(
+        open_hours: List[Dict[str, Any]],
+        arrival_datetime: datetime,
+        stay_minutes: int
+    ) -> bool:
+        """
+        Kiểm tra POI có đủ thời gian để tham quan hay không
+        (Cả arrival_time VÀ departure_time phải nằm trong opening_hours)
+        
+        Hỗ trợ trường hợp qua ngày mới:
+        - POI mở cửa qua đêm (22h-02h)
+        - User bắt đầu route gần nửa đêm (23h40)
+        
+        Args:
+            open_hours: Danh sách giờ mở cửa
+            arrival_datetime: Thời điểm đến POI
+            stay_minutes: Thời gian tham quan (phút)
+            
+        Returns:
+            True nếu có đủ thời gian (arrival + stay đều trong giờ mở cửa)
+            False nếu không đủ thời gian (departure_time > close_time)
+        """
+        if not open_hours:
+            return True  # Không có thông tin → giả sử luôn mở
+        
+        # Tính thời điểm rời đi
+        departure_datetime = arrival_datetime + timedelta(minutes=stay_minutes)
+        
+        # Kiểm tra xem có chuyển ngày không
+        is_cross_midnight = departure_datetime.date() != arrival_datetime.date()
+        
+        # Lấy tên ngày arrival và departure
+        arrival_day_name = arrival_datetime.strftime('%A')
+        departure_day_name = departure_datetime.strftime('%A')
+        
+        arrival_minutes = TimeUtils.time_to_minutes(arrival_datetime.hour, arrival_datetime.minute)
+        departure_minutes = TimeUtils.time_to_minutes(departure_datetime.hour, departure_datetime.minute)
+        
+        # Trường hợp 1: KHÔNG qua ngày mới (cùng ngày)
+        if not is_cross_midnight:
+            # Tìm thông tin ngày arrival
+            for day_info in open_hours:
+                if day_info.get('day') == arrival_day_name:
+                    hours_list = day_info.get('hours', [])
+                    
+                    # Kiểm tra từng khoảng thời gian trong ngày
+                    for time_range in hours_list:
+                        start_str = time_range.get('start', '00:00')
+                        end_str = time_range.get('end', '23:59')
+                        
+                        start_hour, start_minute = TimeUtils.parse_time(start_str)
+                        end_hour, end_minute = TimeUtils.parse_time(end_str)
+                        
+                        start_minutes = TimeUtils.time_to_minutes(start_hour, start_minute)
+                        end_minutes = TimeUtils.time_to_minutes(end_hour, end_minute)
+                        
+                        # Kiểm tra CẢ arrival VÀ departure phải nằm trong [start, end]
+                        if start_minutes <= arrival_minutes and departure_minutes <= end_minutes:
+                            return True
+                    
+                    return False  # Có thông tin ngày nhưng không đủ thời gian
+            
+            return False  # Không tìm thấy thông tin ngày
+        
+        # Trường hợp 2: QUA ngày mới (arrival và departure khác ngày)
+        # Cần kiểm tra:
+        # - arrival_time phải nằm trong giờ mở cửa của ngày arrival
+        # - departure_time phải nằm trong giờ mở cửa của ngày departure (ngày tiếp theo)
+        
+        # Check arrival time trong ngày đầu tiên
+        arrival_valid = False
+        for day_info in open_hours:
+            if day_info.get('day') == arrival_day_name:
+                hours_list = day_info.get('hours', [])
+                
+                for time_range in hours_list:
+                    start_str = time_range.get('start', '00:00')
+                    end_str = time_range.get('end', '23:59')
+                    
+                    start_hour, start_minute = TimeUtils.parse_time(start_str)
+                    end_hour, end_minute = TimeUtils.parse_time(end_str)
+                    
+                    start_minutes = TimeUtils.time_to_minutes(start_hour, start_minute)
+                    end_minutes = TimeUtils.time_to_minutes(end_hour, end_minute)
+                    
+                    # arrival_time phải >= start_time
+                    # Với POI mở qua đêm (22h-02h), arrival lúc 23h50 phải nằm trong [22h00, 23h59]
+                    if start_minutes <= arrival_minutes <= 1439:  # 1439 = 23h59
+                        arrival_valid = True
+                        break
+                
+                if arrival_valid:
+                    break
+        
+        if not arrival_valid:
+            return False  # arrival time không hợp lệ
+        
+        # Check departure time trong ngày tiếp theo
+        departure_valid = False
+        for day_info in open_hours:
+            if day_info.get('day') == departure_day_name:
+                hours_list = day_info.get('hours', [])
+                
+                for time_range in hours_list:
+                    start_str = time_range.get('start', '00:00')
+                    end_str = time_range.get('end', '23:59')
+                    
+                    start_hour, start_minute = TimeUtils.parse_time(start_str)
+                    end_hour, end_minute = TimeUtils.parse_time(end_str)
+                    
+                    start_minutes = TimeUtils.time_to_minutes(start_hour, start_minute)
+                    end_minutes = TimeUtils.time_to_minutes(end_hour, end_minute)
+                    
+                    # departure_time phải <= end_time
+                    # Với POI mở qua đêm, departure lúc 00h20 phải nằm trong [00h00, 02h00]
+                    if 0 <= departure_minutes <= end_minutes:
+                        departure_valid = True
+                        break
+                
+                if departure_valid:
+                    break
+        
+        return departure_valid  # True nếu cả arrival và departure đều hợp lệ
+    
+    @staticmethod
     def overlaps_with_time_window(
         open_hours: List[Dict[str, Any]],
         start_datetime: datetime,
@@ -270,66 +395,5 @@ class TimeUtils:
             "hours": []
         }
     
-    @staticmethod
-    def validate_route_timing(
-        route: List[Dict[str, Any]],
-        start_datetime: datetime,
-        transportation_mode: str,
-        distance_matrix: List[List[float]] = None,
-        default_stay_minutes: int = 30
-    ) -> Tuple[bool, List[str]]:
-        """
-        Kiểm tra xem route có hợp lệ về mặt thời gian không
-        
-        Args:
-            route: Danh sách POI trong route (mỗi POI có 'open_hours')
-            start_datetime: Thời điểm bắt đầu route
-            transportation_mode: Phương tiện di chuyển
-            distance_matrix: Ma trận khoảng cách (km) giữa các POI
-            default_stay_minutes: Thời gian ở mỗi POI (phút)
-            
-        Returns:
-            (is_valid, error_messages)
-        """
-        # Import RouteBuilder để lấy travel time calculation
-        from radius_logic.route import RouteBuilder
-        
-        route_builder = RouteBuilder()
-        current_time = start_datetime
-        errors = []
-        
-        for idx, poi in enumerate(route):
-            # Tính thời gian di chuyển đến POI này
-            if idx == 0:
-                # POI đầu tiên: tính từ user location
-                if distance_matrix and len(distance_matrix) > 0:
-                    distance_km = distance_matrix[0][idx + 1]  # distance_matrix[0] là user
-                    travel_time = route_builder.calculate_travel_time(distance_km, transportation_mode)
-                else:
-                    travel_time = 0  # Không có thông tin → skip
-            else:
-                # POI tiếp theo: tính từ POI trước
-                if distance_matrix and len(distance_matrix) > idx:
-                    prev_idx = idx  # idx trong distance_matrix (có user ở index 0)
-                    curr_idx = idx + 1
-                    distance_km = distance_matrix[prev_idx][curr_idx]
-                    travel_time = route_builder.calculate_travel_time(distance_km, transportation_mode)
-                else:
-                    travel_time = 0
-            
-            # Thời điểm đến POI
-            arrival_time = current_time + timedelta(minutes=travel_time)
-            
-            # Kiểm tra POI có mở cửa không
-            open_hours = poi.get('open_hours')
-            if not TimeUtils.is_open_at_time(open_hours, arrival_time):
-                poi_name = poi.get('name', poi.get('id', f'POI #{idx+1}'))
-                errors.append(
-                    f"POI '{poi_name}' is closed at {arrival_time.strftime('%A %H:%M')}"
-                )
-            
-            # Cập nhật thời gian hiện tại (sau khi tham quan)
-            stay_time = default_stay_minutes
-            current_time = arrival_time + timedelta(minutes=stay_time)
-        
-        return len(errors) == 0, errors
+    # validate_route_timing đã bị loại bỏ vì logic filter POI đã được áp dụng
+    # ngay trong quá trình build route (xem route.py build_single_route_greedy)

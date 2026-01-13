@@ -6,6 +6,7 @@ import math
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
 from config.config import Config
+from utils.time_utils import TimeUtils
 
 class RouteBuilder:
     """
@@ -34,6 +35,31 @@ class RouteBuilder:
     def __init__(self):
         """Khởi tạo RouteBuilder"""
         pass
+    
+    def is_poi_available_at_time(
+        self,
+        place: Dict[str, Any],
+        arrival_datetime: datetime
+    ) -> bool:
+        """
+        Kiểm tra POI có sẵn sàng tại thời điểm đến (có đủ thời gian stay)
+        
+        Args:
+            place: POI cần kiểm tra
+            arrival_datetime: Thời điểm đến POI
+            
+        Returns:
+            True nếu POI mở cửa và có đủ thời gian stay
+        """
+        if not arrival_datetime:
+            return True
+        
+        stay_time = self.get_stay_time(place.get("poi_type", ""))
+        return TimeUtils.has_enough_time_to_stay(
+            place.get('open_hours', []), 
+            arrival_datetime, 
+            stay_time
+        )
     
     def is_same_food_type(self, place1: Dict[str, Any], place2: Dict[str, Any]) -> bool:
         """
@@ -242,7 +268,8 @@ class RouteBuilder:
         transportation_mode: str,
         max_time_minutes: int,
         target_places: int,
-        first_place_idx: Optional[int] = None
+        first_place_idx: Optional[int] = None,
+        current_datetime: Optional[datetime] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Xây dựng 1 lộ trình theo thuật toán Greedy
@@ -254,6 +281,7 @@ class RouteBuilder:
             max_time_minutes: Thời gian tối đa (phút)
             target_places: Số địa điểm muốn đi
             first_place_idx: Index điểm xuất phát (None = tự động chọn)
+            current_datetime: Thời điểm hiện tại của user (để kiểm tra opening hours)
             
         Returns:
             Dict chứa thông tin lộ trình hoặc None nếu không khả thi
@@ -285,6 +313,18 @@ class RouteBuilder:
             best_first_score = -1
             
             for i, place in enumerate(places):
+                # Nếu có current_datetime, kiểm tra opening_hours trước
+                if current_datetime:
+                    travel_time = self.calculate_travel_time(
+                        distance_matrix[0][i + 1],
+                        transportation_mode
+                    )
+                    arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
+                    
+                    # Bỏ qua POI nếu không đủ thời gian stay
+                    if not self.is_poi_available_at_time(place, arrival_time):
+                        continue
+                
                 combined = self.calculate_combined_score(
                     place_idx=i,
                     current_pos=0,
@@ -359,6 +399,18 @@ class RouteBuilder:
                 if last_added_place and self.is_same_food_type(last_added_place, place):
                     continue  # Bỏ qua POI này vì giống hệt 3 level với POI trước
                 
+                # Nếu có current_datetime, kiểm tra opening_hours
+                if current_datetime:
+                    travel_time_to_poi = self.calculate_travel_time(
+                        distance_matrix[current_pos][i + 1],
+                        transportation_mode
+                    )
+                    arrival_time = current_datetime + timedelta(minutes=total_travel_time + total_stay_time + travel_time_to_poi)
+                    
+                    # Bỏ qua POI nếu không đủ thời gian stay
+                    if not self.is_poi_available_at_time(place, arrival_time):
+                        continue
+                
                 combined = self.calculate_combined_score(
                     place_idx=i,
                     current_pos=current_pos,
@@ -398,6 +450,18 @@ class RouteBuilder:
                     # Kiểm tra 3 level nếu cả 2 POI đều là food category
                     if last_added_place and self.is_same_food_type(last_added_place, place):
                         continue  # Bỏ qua POI này vì giống hệt 3 level với POI trước
+                    
+                    # Nếu có current_datetime, kiểm tra opening_hours
+                    if current_datetime:
+                        travel_time_to_poi = self.calculate_travel_time(
+                            distance_matrix[current_pos][i + 1],
+                            transportation_mode
+                        )
+                        arrival_time = current_datetime + timedelta(minutes=total_travel_time + total_stay_time + travel_time_to_poi)
+                        
+                        # Bỏ qua POI nếu không đủ thời gian stay
+                        if not self.is_poi_available_at_time(place, arrival_time):
+                            continue
                     
                     combined = self.calculate_combined_score(
                         place_idx=i,
@@ -461,6 +525,18 @@ class RouteBuilder:
                 dist_to_user = distance_matrix[i + 1][0]
                 if dist_to_user > current_threshold:
                     continue
+                
+                # Nếu có current_datetime, kiểm tra opening_hours
+                if current_datetime:
+                    travel_time_to_poi = self.calculate_travel_time(
+                        distance_matrix[current_pos][i + 1],
+                        transportation_mode
+                    )
+                    arrival_time = current_datetime + timedelta(minutes=total_travel_time + total_stay_time + travel_time_to_poi)
+                    
+                    # Bỏ qua POI nếu không đủ thời gian stay
+                    if not self.is_poi_available_at_time(place, arrival_time):
+                        continue
                 
                 # Kiểm tra thời gian
                 temp_travel = total_travel_time + self.calculate_travel_time(
@@ -619,6 +695,18 @@ class RouteBuilder:
         # Tìm top điểm xuất phát có combined_score cao nhất
         first_candidates = []
         for i, place in enumerate(places):
+            # Nếu có current_datetime, kiểm tra opening_hours trước
+            if current_datetime:
+                travel_time = self.calculate_travel_time(
+                    distance_matrix[0][i + 1],
+                    transportation_mode
+                )
+                arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
+                
+                # Bỏ qua POI nếu không đủ thời gian stay
+                if not self.is_poi_available_at_time(place, arrival_time):
+                    continue
+            
             combined = self.calculate_combined_score(
                 place_idx=i,
                 current_pos=0,
@@ -627,6 +715,11 @@ class RouteBuilder:
                 max_distance=max_distance
             )
             first_candidates.append((i, combined, place.get('category')))
+        
+        # Nếu không có POI nào mở cửa, return []
+        if not first_candidates:
+            print("⚠️ Không có POI nào mở cửa tại thời điểm hiện tại")
+            return []
         
         first_candidates.sort(key=lambda x: x[1], reverse=True)
         
@@ -658,7 +751,8 @@ class RouteBuilder:
             transportation_mode=transportation_mode,
             max_time_minutes=max_time_minutes,
             target_places=target_places,
-            first_place_idx=best_first_place
+            first_place_idx=best_first_place,
+            current_datetime=current_datetime
         )
         
         if route_1 is None:
@@ -683,7 +777,8 @@ class RouteBuilder:
                     transportation_mode=transportation_mode,
                     max_time_minutes=max_time_minutes,
                     target_places=target_places,
-                    first_place_idx=first_idx
+                    first_place_idx=first_idx,
+                    current_datetime=current_datetime
                 )
                 
                 if route_result is None:
@@ -719,8 +814,6 @@ class RouteBuilder:
                 
                 # Thêm opening hours info nếu có current_datetime
                 if current_datetime:
-                    from utils.time_utils import TimeUtils
-                    
                     # Tính thời gian đến POI này
                     if order == 1:
                         # POI đầu tiên: travel time từ user
@@ -754,9 +847,6 @@ class RouteBuilder:
                     # Update current time cho POI tiếp theo
                     current_time_in_route = arrival_time
                 
-                # Xóa open_hours khỏi response (chỉ giữ opening_hours_today)
-                place_data.pop("open_hours", None)
-                
                 places_with_metadata.append(place_data)
             
             route_data = {
@@ -769,28 +859,6 @@ class RouteBuilder:
                 "efficiency": route["efficiency"],
                 "places": places_with_metadata
             }
-            
-            # Validate thời gian mở cửa nếu có current_datetime
-            if current_datetime:
-                from utils.time_utils import TimeUtils
-                
-                # Validate route với opening hours
-                is_valid, errors = TimeUtils.validate_route_timing(
-                    route=places_with_metadata,
-                    start_datetime=current_datetime,
-                    transportation_mode=transportation_mode,
-                    distance_matrix=distance_matrix,
-                    default_stay_minutes=self.DEFAULT_STAY_TIME
-                )
-                
-                route_data["opening_hours_validated"] = True
-                route_data["is_valid_timing"] = is_valid
-                
-                if not is_valid:
-                    route_data["timing_warnings"] = errors
-                    print(f"⚠️ Route {idx} has timing issues:")
-                    for error in errors:
-                        print(f"   - {error}")
             
             result.append(route_data)
         
