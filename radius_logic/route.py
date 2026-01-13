@@ -6,7 +6,7 @@ import math
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
 from config.config import Config
-
+import json
 class RouteBuilder:
     """
     Class xây dựng lộ trình tối ưu sử dụng thuật toán Greedy với weighted scoring
@@ -494,7 +494,8 @@ class RouteBuilder:
                 "rating": round(float(place.get("rating") or 0.5), 3),
                 "combined_score": round(combined_score, 3),
                 "travel_time_minutes": round(travel_time, 1),
-                "stay_time_minutes": stay_time
+                "stay_time_minutes": stay_time,
+                "open_hours": place.get("open_hours", [])
             })
             
             prev_pos = place_idx + 1
@@ -597,7 +598,7 @@ class RouteBuilder:
             target_places=target_places,
             first_place_idx=best_first_place
         )
-        
+        # print("route_1",route_1)
         if route_1 is None:
             return []
         
@@ -652,7 +653,7 @@ class RouteBuilder:
             
             for order, place in enumerate(route["places"], 1):
                 place_data = place.copy()
-                place_data["route_id"] = idx
+                # place_data["route_id"] = idx
                 place_data["order"] = order  # Số thứ tự di chuyển (1, 2, 3, ...)
                 
                 # Thêm opening hours info nếu có current_datetime
@@ -677,7 +678,8 @@ class RouteBuilder:
                             current_time_in_route, 
                             travel_time
                         )
-                    
+                    # with open("place_data.json", "w", encoding="utf-8") as f:
+                    #     json.dump(place_data, f, ensure_ascii=False, indent=4)
                     # Lấy opening hours cho ngày đó
                     opening_hours_today = TimeUtils.get_opening_hours_for_day(
                         place_data.get("open_hours", []),

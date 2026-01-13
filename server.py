@@ -95,7 +95,7 @@ async def startup_event():
     - Tăng tốc độ response
     """
     print("Initializing services...")
-    # Import ở đây để đảm bảo chỉ init 1 lần
+    # # Import ở đây để đảm bảo chỉ init 1 lần
     from services.semantic_search_service import SemanticSearchService
     import routers.v1.semantic_api as semantic_api_module
     

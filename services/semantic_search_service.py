@@ -405,6 +405,7 @@ class SemanticSearchService:
             # 1. Spatial search (chỉ 1 lần) với tùy chọn lọc theo thời gian
             print(f"\n🔍 Step 1: Spatial search...")
             location_service = LocationService(Config.get_db_connection_string())
+
             spatial_results = location_service.find_nearest_locations(
                 latitude=latitude,
                 longitude=longitude,
@@ -420,9 +421,11 @@ class SemanticSearchService:
                     "spatial_error": spatial_results.get("error"),
                     "results": []
                 }
-            
+            # -------------------------debug------------------- 
+            # spatial_results["results"]
+            #   --------------------------------------------
             id_list = [loc["id"] for loc in spatial_results["results"]]
-            
+            print("id_list--------------------", len(id_list))
             if not id_list:
                 return {
                     "status": "success",
@@ -516,7 +519,11 @@ class SemanticSearchService:
             
             print(f"\n✅ Total: {len(all_results)} unique POIs from {len(queries)} queries in {total_time:.3f}s")
             print(f"   (Mỗi POI chỉ thuộc 1 category có similarity cao nhất)")
-            
+            # ------------debug----------------------------------
+            # with open("combined_semantic_results.json", "w", encoding="utf-8") as f:
+                # import json
+                # json.dump(all_results, f, ensure_ascii=False, indent=4)
+            # ---------------------------------------------------- 
             return {
                 "status": "success",
                 "query": semantic_query,
@@ -620,6 +627,7 @@ class SemanticSearchService:
             route_start = time.time()
             
             user_location = (latitude, longitude)
+            
             routes = self.route_builder.build_routes(
                 user_location=user_location,
                 places=semantic_places,

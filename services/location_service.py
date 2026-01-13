@@ -10,7 +10,7 @@ from config.config import Config
 from typing import List, Dict, Any, Tuple
 from radius_logic.h3_radius_search import H3RadiusSearch
 from utils.time_utils import TimeUtils
-
+import json
 
 class LocationService:
     """Service xử lý logic tìm kiếm địa điểm với H3 + Redis cache"""
@@ -76,6 +76,7 @@ class LocationService:
         
         try:
             # Đo thời gian thực thi
+            # print("abc")
             start_time = time.time()
             
             # Gọi H3 + Redis search: trả về TẤT CẢ địa điểm trong bán kính (>= 50)
@@ -84,7 +85,9 @@ class LocationService:
                 longitude=longitude,
                 transportation_mode=transportation_mode
             )
-            
+            # with open("results.json", "w", encoding="utf-8") as f:
+            #     json.dump(results, f, ensure_ascii=False, indent=4)
+            # print("result123",results)
             # Lọc theo thời gian nếu có current_datetime và max_time_minutes
             filtered_by_time = False
             time_window = None
@@ -104,8 +107,10 @@ class LocationService:
                 
                 # Lọc POI có overlap với time window
                 results = TimeUtils.filter_open_pois(results, current_datetime, end_datetime)
+                # with open("results1.json", "w", encoding="utf-8") as f:
+                    # json.dump(results, f, ensure_ascii=False, indent=4)
                 filtered_by_time = True
-                
+                 
                 print(f"  📊 Before time filter: {original_count} POIs")
                 print(f"  ✅ After time filter: {len(results)} POIs")
             
