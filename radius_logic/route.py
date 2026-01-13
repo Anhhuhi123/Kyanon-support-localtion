@@ -35,6 +35,54 @@ class RouteBuilder:
         """Khởi tạo RouteBuilder"""
         pass
     
+    def is_same_food_type(self, place1: Dict[str, Any], place2: Dict[str, Any]) -> bool:
+        """
+        Kiểm tra xem 2 POI có giống nhau ở CẢ 3 level hay không
+        (poi_type_clean, main_subcategory, specialization)
+        
+        Chỉ áp dụng cho Restaurant, Bar, Cafe & Bakery.
+        Return True nếu GIỐNG NHAU ở cả 3 level -> KHÔNG cho phép liên tiếp
+        
+        Args:
+            place1: POI thứ nhất
+            place2: POI thứ hai
+            
+        Returns:
+            True nếu giống nhau ở cả 3 level (không cho phép liên tiếp)
+            False nếu khác nhau ở ít nhất 1 level (cho phép liên tiếp)
+        """
+        # Danh sách food categories cần kiểm tra
+        FOOD_CATEGORIES = ["Restaurant", "Bar", "Cafe & Bakery"]
+        
+        # Lấy poi_type_clean
+        poi_type1 = place1.get("poi_type_clean", "")
+        poi_type2 = place2.get("poi_type_clean", "")
+        
+        # Nếu không phải food category, cho phép liên tiếp (return False)
+        if poi_type1 not in FOOD_CATEGORIES or poi_type2 not in FOOD_CATEGORIES:
+            return False
+        
+        # Level 1: So sánh poi_type_clean
+        if poi_type1 != poi_type2:
+            return False  # Khác nhau ở level 1 -> cho phép liên tiếp
+        
+        # Level 2: So sánh main_subcategory
+        main_sub1 = place1.get("main_subcategory")
+        main_sub2 = place2.get("main_subcategory")
+        
+        if main_sub1 != main_sub2:
+            return False  # Khác nhau ở level 2 -> cho phép liên tiếp
+        
+        # Level 3: So sánh specialization
+        spec1 = place1.get("specialization")
+        spec2 = place2.get("specialization")
+        
+        if spec1 != spec2:
+            return False  # Khác nhau ở level 3 -> cho phép liên tiếp
+        
+        # Giống nhau ở cả 3 level -> KHÔNG cho phép liên tiếp
+        return True
+    
     def calculate_distance_haversine(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """
         Tính khoảng cách Haversine giữa 2 điểm (km)
@@ -296,6 +344,9 @@ class RouteBuilder:
             
             # Lần 1: Tìm POI với category BẮT BUỘC
             candidates_with_required_category = []
+            # Lấy POI vừa thêm để so sánh 3 level
+            last_added_place = places[route[-1]] if route else None
+            
             for i, place in enumerate(places):
                 if i in visited:
                     continue
@@ -303,6 +354,10 @@ class RouteBuilder:
                 # Chỉ xét POI có đúng category yêu cầu
                 if required_category and place.get('category') != required_category:
                     continue
+                
+                # Kiểm tra 3 level nếu cả 2 POI đều là food category
+                if last_added_place and self.is_same_food_type(last_added_place, place):
+                    continue  # Bỏ qua POI này vì giống hệt 3 level với POI trước
                 
                 combined = self.calculate_combined_score(
                     place_idx=i,
@@ -339,6 +394,10 @@ class RouteBuilder:
                 for i, place in enumerate(places):
                     if i in visited:
                         continue
+                    
+                    # Kiểm tra 3 level nếu cả 2 POI đều là food category
+                    if last_added_place and self.is_same_food_type(last_added_place, place):
+                        continue  # Bỏ qua POI này vì giống hệt 3 level với POI trước
                     
                     combined = self.calculate_combined_score(
                         place_idx=i,
@@ -487,6 +546,9 @@ class RouteBuilder:
                 "place_id": place["id"],
                 "place_name": place["name"],
                 "poi_type": place.get("poi_type", ""),
+                "poi_type_clean": place.get("poi_type_clean", ""),
+                "main_subcategory": place.get("main_subcategory", ""),
+                "specialization": place.get("specialization", ""),
                 "address": place.get("address", ""),
                 "lat": place["lat"],
                 "lon": place["lon"],
@@ -494,7 +556,8 @@ class RouteBuilder:
                 "rating": round(float(place.get("rating") or 0.5), 3),
                 "combined_score": round(combined_score, 3),
                 "travel_time_minutes": round(travel_time, 1),
-                "stay_time_minutes": stay_time
+                "stay_time_minutes": stay_time,
+                "open_hours": place.get("open_hours", [])
             })
             
             prev_pos = place_idx + 1
@@ -652,8 +715,7 @@ class RouteBuilder:
             
             for order, place in enumerate(route["places"], 1):
                 place_data = place.copy()
-                place_data["route_id"] = idx
-                place_data["order"] = order  # Số thứ tự di chuyển (1, 2, 3, ...)
+                # place_data["route_id"] = idx
                 
                 # Thêm opening hours info nếu có current_datetime
                 if current_datetime:
@@ -687,9 +749,13 @@ class RouteBuilder:
                     # Thêm vào response
                     place_data["arrival_time"] = arrival_time.strftime('%Y-%m-%d %H:%M:%S')
                     place_data["opening_hours_today"] = opening_hours_today
-                    
+                    place_data["order"] = order  # Số thứ tự di chuyển (1, 2, 3, ...)
+
                     # Update current time cho POI tiếp theo
                     current_time_in_route = arrival_time
+                
+                # Xóa open_hours khỏi response (chỉ giữ opening_hours_today)
+                place_data.pop("open_hours", None)
                 
                 places_with_metadata.append(place_data)
             

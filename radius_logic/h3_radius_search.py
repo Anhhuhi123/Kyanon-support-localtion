@@ -203,25 +203,14 @@ class H3RadiusSearch:
                     lat,
                     lon,
                     COALESCE(normalize_stars_reviews, 0.5) AS rating,
-                    open_hours
+                    open_hours,
+                    poi_type_clean,
+                    main_subcategory,
+                    specialization
                 FROM public."PoiClean"
                 WHERE lat BETWEEN %s AND %s
                   AND lon BETWEEN %s AND %s
             """
-
-            # query = """
-            #     SELECT 
-            #         id,
-            #         name,
-            #         poi_type,
-            #         address,
-            #         lat,
-            #         long,
-            #         COALESCE(normalize_stars_reviews, 0.5) AS rating
-            #     FROM poi_locations
-            #     WHERE lat BETWEEN %s AND %s
-            #       AND long BETWEEN %s AND %s
-            # """
             
             bbox_size_lat = max_lat - min_lat
             bbox_size_lon = max_lon - min_lon
@@ -239,6 +228,9 @@ class H3RadiusSearch:
                     "id": row[0],
                     "name": row[1],
                     "poi_type": row[2],
+                    "poi_type_clean": row[8],
+                    "main_subcategory": row[9],
+                    "specialization": row[10],
                     "address": row[3],
                     "lat": row[4],
                     "lon": row[5],

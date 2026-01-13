@@ -27,9 +27,9 @@ def fetch_poi_data_from_db():
     
     # Query để lấy id và poi_type
     query = """
-        SELECT id, poi_type 
+        SELECT id, poi_type_clean 
         FROM public."PoiClean" 
-        WHERE poi_type IS NOT NULL AND poi_type != ''
+        WHERE poi_type_clean IS NOT NULL AND poi_type_clean != ''
         ORDER BY id
     """
     
@@ -98,7 +98,7 @@ def ingest_to_qdrant(poi_data, embedder, client, collection_name, batch_size=100
             id=str(location_id),  # Chuyển sang string nếu cần
             vector=embeddings[idx].tolist(),
             payload={
-                "poi_type": poi_type
+                "poi_type_clean": poi_type
             }
         )
         points.append(point)
