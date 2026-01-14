@@ -12,6 +12,7 @@ from typing import List, Dict, Any, Tuple
 from radius_logic.information_location import LocationInfoService
 from retrieval.qdrant_vector_store import QdrantVectorStore
 from qdrant_client.models import Filter, FieldCondition, MatchAny
+from utils.time_utils import TimeUtils
 
 
 class SemanticSearchService:
@@ -385,13 +386,33 @@ class SemanticSearchService:
             total_start = time.time()
             
             # Split queries bằng dấu phẩy và trim whitespace
-            queries = [q.strip() for q in semantic_query.split(',') if q.strip()]
+            original_queries = [q.strip() for q in semantic_query.split(',') if q.strip()]
+
+            # Luôn mở rộng "Food & Local Flavours" thành ["Cafe & Bakery", "Restaurant"]
+            queries = []
+            for q in original_queries:
+                if q == "Food & Local Flavours":
+                    queries.extend(["Cafe & Bakery", "Restaurant"])
+                else:
+                    queries.append(q)
             
-            # Nếu customer_like=True và CHỈ có 1 query là "Food & Local Flavours", tự động thêm "Entertainments"
+            # Nếu customer_like=True và input ban đầu CHỈ có 1 query là "Food & Local Flavours", tự động thêm "Culture & heritage"
             if customer_like:
-                if len(queries) == 1 and queries[0] == "Food & Local Flavours":
-                    queries.append("Culture & heritage")
-                    print(f"✨ CustomerLike=True + chỉ có 'Food & Local Flavours' → Tự động thêm 'Entertainments'")
+                if len(original_queries) == 1 and original_queries[0] == "Food & Local Flavours":
+                    if "Culture & heritage" not in queries:
+                        queries.append("Culture & heritage")
+                        print(f"✨ CustomerLike=True + single 'Food & Local Flavours' → Tự động thêm 'Culture & heritage'")
+            
+            # 🍽️ MEAL TIME LOGIC: Tự động thêm Restaurant nếu có overlap với meal times
+            if current_datetime and max_time_minutes:
+                meal_check = TimeUtils.check_overlap_with_meal_times(current_datetime, max_time_minutes)
+                
+                # Nếu cần restaurant và user không chọn Food & Local Flavours
+                if meal_check["needs_restaurant"] and "Food & Local Flavours" not in original_queries:
+                    if "Restaurant" not in queries:
+                        queries.append("Restaurant")
+                        print(f"🍽️  Tự động thêm 'Restaurant' vì overlap {meal_check['lunch_overlap_minutes']}m lunch / {meal_check['dinner_overlap_minutes']}m dinner")
+
             
             if not queries:
                 return {

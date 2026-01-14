@@ -246,6 +246,7 @@ class TimeUtils:
     ) -> bool:
         """
         Kiểm tra POI có overlap với time window [start_datetime, end_datetime] không
+        Hỗ trợ khoảng mở qua đêm (ví dụ 22:00-02:00).
         
         Args:
             open_hours: Danh sách giờ mở cửa
@@ -274,26 +275,31 @@ class TimeUtils:
                         start_str = time_range.get('start', '00:00')
                         end_str = time_range.get('end', '23:59')
                         
-                        # Tạo datetime cho khoảng thời gian mở cửa trong ngày
                         start_hour, start_minute = TimeUtils.parse_time(start_str)
                         end_hour, end_minute = TimeUtils.parse_time(end_str)
                         
+                        # Tạo datetime cho khoảng mở cửa: xử lý trường hợp overnight (end < start)
                         poi_open_time = datetime.combine(current_date, datetime.min.time()).replace(
                             hour=start_hour, minute=start_minute
                         )
-                        poi_close_time = datetime.combine(current_date, datetime.min.time()).replace(
-                            hour=end_hour, minute=end_minute
-                        )
+                        if TimeUtils.time_to_minutes(end_hour, end_minute) >= TimeUtils.time_to_minutes(start_hour, start_minute):
+                            # cùng ngày
+                            poi_close_time = datetime.combine(current_date, datetime.min.time()).replace(
+                                hour=end_hour, minute=end_minute
+                            )
+                        else:
+                            # qua đêm: close vào ngày tiếp theo
+                            poi_close_time = datetime.combine(current_date + timedelta(days=1), datetime.min.time()).replace(
+                                hour=end_hour, minute=end_minute
+                            )
                         
-                        # Kiểm tra overlap: [start_datetime, end_datetime] vs [poi_open_time, poi_close_time]
-                        # Có overlap nếu: max(start1, start2) < min(end1, end2)
+                        # Kiểm tra overlap: max(start1, start2) < min(end1, end2)
                         overlap_start = max(start_datetime, poi_open_time)
                         overlap_end = min(end_datetime, poi_close_time)
                         
                         if overlap_start < overlap_end:
                             return True
             
-            # Chuyển sang ngày tiếp theo
             current_date += timedelta(days=1)
         
         return False
@@ -397,3 +403,56 @@ class TimeUtils:
     
     # validate_route_timing đã bị loại bỏ vì logic filter POI đã được áp dụng
     # ngay trong quá trình build route (xem route.py build_single_route_greedy)
+    
+    @staticmethod
+    def check_overlap_with_meal_times(
+        start_datetime: datetime,
+        max_time_minutes: int
+    ) -> Dict[str, Any]:
+        """
+        Kiểm tra xem [start_datetime, start_datetime + max_time_minutes] có overlap 
+        ít nhất 1 tiếng với khung giờ ăn (12h-15h hoặc 18h30-22h) không
+        
+        Args:
+            start_datetime: Thời điểm bắt đầu
+            max_time_minutes: Tổng thời gian có (phút)
+            
+        Returns:
+            Dict {
+                "has_lunch_overlap": bool,
+                "lunch_overlap_minutes": int,
+                "has_dinner_overlap": bool, 
+                "dinner_overlap_minutes": int,
+                "needs_restaurant": bool  # True nếu có ít nhất 1 meal overlap >= 60 phút
+            }
+        """
+        end_datetime = start_datetime + timedelta(minutes=max_time_minutes)
+        
+        # Định nghĩa khung giờ ăn
+        lunch_start = start_datetime.replace(hour=12, minute=0, second=0, microsecond=0)
+        lunch_end = start_datetime.replace(hour=15, minute=0, second=0, microsecond=0)
+        dinner_start = start_datetime.replace(hour=18, minute=30, second=0, microsecond=0)
+        dinner_end = start_datetime.replace(hour=22, minute=0, second=0, microsecond=0)
+        
+        # Kiểm tra overlap với lunch (12h-15h)
+        lunch_overlap_start = max(start_datetime, lunch_start)
+        lunch_overlap_end = min(end_datetime, lunch_end)
+        lunch_overlap_minutes = max(0, int((lunch_overlap_end - lunch_overlap_start).total_seconds() / 60))
+        
+        # Kiểm tra overlap với dinner (18h30-22h)
+        dinner_overlap_start = max(start_datetime, dinner_start)
+        dinner_overlap_end = min(end_datetime, dinner_end)
+        dinner_overlap_minutes = max(0, int((dinner_overlap_end - dinner_overlap_start).total_seconds() / 60))
+        
+        # Cần restaurant nếu có ít nhất 1 meal overlap >= 60 phút
+        needs_restaurant = (lunch_overlap_minutes >= 60) or (dinner_overlap_minutes >= 60)
+        
+        return {
+            "has_lunch_overlap": lunch_overlap_minutes > 0,
+            "lunch_overlap_minutes": lunch_overlap_minutes,
+            "has_dinner_overlap": dinner_overlap_minutes > 0,
+            "dinner_overlap_minutes": dinner_overlap_minutes,
+            "needs_restaurant": needs_restaurant,
+            "lunch_window": (lunch_start, lunch_end) if lunch_overlap_minutes >= 60 else None,
+            "dinner_window": (dinner_start, dinner_end) if dinner_overlap_minutes >= 60 else None
+        }

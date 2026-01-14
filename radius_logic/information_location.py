@@ -273,6 +273,9 @@ class LocationInfoService:
                     lon,
                     address,
                     poi_type,
+                    poi_type_clean,
+                    main_subcategory,
+                    specialization,
                     normalize_stars_reviews
                 FROM public."PoiClean"
                 WHERE id = ANY(%s::uuid[])
@@ -293,7 +296,10 @@ class LocationInfoService:
                     "lon": row[3],
                     "address": row[4],
                     "poi_type": row[5],
-                    "rating": row[6]
+                    "poi_type_clean": row[6],
+                    "main_subcategory": row[7],
+                    "specialization": row[8],
+                    "rating": row[9]
                 }
             
             # Bước 5: Cache kết quả mới (batch set)

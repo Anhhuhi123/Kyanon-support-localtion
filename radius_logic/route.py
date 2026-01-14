@@ -325,6 +325,11 @@ class RouteBuilder:
                     if not self.is_poi_available_at_time(place, arrival_time):
                         continue
                 
+                # Loại bỏ Restaurant khỏi POI đầu nếu đang trong chế độ chèn cho meal
+                # (Không có Cafe & Bakery nhưng có Restaurant)
+                if should_insert_restaurant_for_meal and place.get('category') == 'Restaurant':
+                    continue
+                
                 combined = self.calculate_combined_score(
                     place_idx=i,
                     current_pos=0,
@@ -361,15 +366,74 @@ class RouteBuilder:
         # Lấy danh sách tất cả category có trong places
         all_categories = list(set(place.get('category') for place in places if 'category' in place))
         
+        # 🍽️ Kiểm tra xem có cần chèn Restaurant vào meal times không
+        # Logic: Nếu có "Cafe & Bakery" → User chọn Food → Xen kẽ tự nhiên
+        #        Nếu KHÔNG có "Cafe & Bakery" nhưng có "Restaurant" → Do overlap meal time → Chèn 1 POI Restaurant
+        has_cafe = "Cafe & Bakery" in all_categories
+        has_restaurant = "Restaurant" in all_categories
+        
+        # Nếu có Cafe & Bakery → User chọn Food → Xen kẽ bình thường
+        should_insert_restaurant_for_meal = False
+        meal_windows = None
+        restaurant_inserted_for_meal = False
+        
+        if not has_cafe and has_restaurant:
+            # Không có Cafe nhưng có Restaurant → Chắc chắn do overlap meal time
+            if current_datetime and max_time_minutes:
+                meal_check = TimeUtils.check_overlap_with_meal_times(current_datetime, max_time_minutes)
+                if meal_check["needs_restaurant"]:
+                    should_insert_restaurant_for_meal = True
+                    meal_windows = {
+                        "lunch": meal_check.get("lunch_window"),
+                        "dinner": meal_check.get("dinner_window")
+                    }
+                    print(f"🍽️  Không có Cafe & Bakery nhưng có Restaurant → Chèn ĐÚNG 1 Restaurant vào meal time")
+        
         # target_places là số POI cần đi (không tính user)
         # Đã có 1 POI đầu, cần chọn (target_places - 2) POI giữa, và 1 POI cuối
         for step in range(target_places - 2):
             best_next = None
             best_next_score = -1
             
-            # Xác định category BẮT BUỘC cho POI tiếp theo (xen kẽ tuần hoàn)
+            # 🍽️ MEAL TIME PRIORITY: Kiểm tra xem có cần ưu tiên Restaurant không
+            # CHỈ ưu tiên nếu CHƯA chèn Restaurant cho meal
+            arrival_at_next = None
+            if current_datetime:
+                arrival_at_next = current_datetime + timedelta(minutes=total_travel_time + total_stay_time)
+            
+            should_prioritize_restaurant = False
+            if meal_windows and arrival_at_next and not restaurant_inserted_for_meal:
+                # Kiểm tra xem arrival time có nằm trong meal window không
+                for meal_type, window in meal_windows.items():
+                    if window:
+                        meal_start, meal_end = window
+                        # Nếu đến trong khoảng meal time, ưu tiên Restaurant
+                        if meal_start <= arrival_at_next <= meal_end:
+                            should_prioritize_restaurant = True
+                            print(f"🍽️  Ưu tiên Restaurant vì đến lúc {arrival_at_next.strftime('%H:%M')} (trong {meal_type} window)")
+                            break
+            
+            # Xác định category BẮT BUỘC cho POI tiếp theo
             required_category = None
-            if category_sequence and all_categories:
+            # Mặc định loại Restaurant nếu đang trong chế độ chèn cho meal
+            exclude_restaurant = should_insert_restaurant_for_meal
+            
+            # Nếu cần ưu tiên Restaurant (chưa chèn cho meal), bắt buộc chọn Restaurant
+            if should_prioritize_restaurant:
+                # Kiểm tra xem có Restaurant trong places không
+                has_restaurant_available = any(p.get('category') == 'Restaurant' and i not in visited for i, p in enumerate(places))
+                if has_restaurant_available:
+                    required_category = 'Restaurant'
+                    restaurant_inserted_for_meal = True  # Đánh dấu đã chèn Restaurant
+                    exclude_restaurant = False  # Cho phép chọn Restaurant cho bước này
+                    print(f"   → BẮT BUỘC chọn Restaurant cho bước này (chỉ 1 lần)")
+            # Nếu đã chèn Restaurant cho meal rồi, tiếp tục loại bỏ Restaurant
+            elif should_insert_restaurant_for_meal and restaurant_inserted_for_meal:
+                exclude_restaurant = True
+                print(f"   → Đã chèn Restaurant cho meal, chỉ chọn từ category ban đầu")
+            
+            # Nếu không ưu tiên Restaurant, áp dụng logic xen kẽ category bình thường
+            if required_category is None and category_sequence and all_categories:
                 # Lấy category của POI vừa thêm
                 last_category = category_sequence[-1]
                 # Tìm index của category hiện tại trong danh sách
@@ -389,6 +453,10 @@ class RouteBuilder:
             
             for i, place in enumerate(places):
                 if i in visited:
+                    continue
+                
+                # Loại bỏ Restaurant nếu đã chèn cho meal
+                if exclude_restaurant and place.get('category') == 'Restaurant':
                     continue
                 
                 # Chỉ xét POI có đúng category yêu cầu
@@ -445,6 +513,10 @@ class RouteBuilder:
             if best_next is None:
                 for i, place in enumerate(places):
                     if i in visited:
+                        continue
+                    
+                    # Loại bỏ Restaurant nếu đã chèn cho meal
+                    if exclude_restaurant and place.get('category') == 'Restaurant':
                         continue
                     
                     # Kiểm tra 3 level nếu cả 2 POI đều là food category
@@ -520,6 +592,11 @@ class RouteBuilder:
             for i, place in enumerate(places):
                 if i in visited:
                     continue
+                
+                # 🍽️ Nếu đang trong chế độ chèn meal VÀ đã chèn Restaurant rồi → Loại Restaurant khỏi POI cuối
+                if should_insert_restaurant_for_meal and restaurant_inserted_for_meal:
+                    if place.get('category') == 'Restaurant':
+                        continue
                 
                 # Kiểm tra khoảng cách đến user
                 dist_to_user = distance_matrix[i + 1][0]
@@ -689,8 +766,11 @@ class RouteBuilder:
         
         # Kiểm tra categories có trong places
         all_categories = list(set(place.get('category') for place in places if 'category' in place))
-        has_food = "Food & Local Flavours" in all_categories
-        should_prioritize_food = has_food and len(all_categories) <= 2
+        has_cafe = "Cafe & Bakery" in all_categories
+        has_restaurant = "Restaurant" in all_categories
+        
+        # Nếu không có Cafe nhưng có Restaurant → Đang ở chế độ chèn cho meal
+        should_insert_restaurant_for_meal = (not has_cafe and has_restaurant)
         
         # Tìm top điểm xuất phát có combined_score cao nhất
         first_candidates = []
@@ -706,6 +786,10 @@ class RouteBuilder:
                 # Bỏ qua POI nếu không đủ thời gian stay
                 if not self.is_poi_available_at_time(place, arrival_time):
                     continue
+            
+            # Loại bỏ Restaurant nếu đang trong chế độ chèn cho meal (Restaurant sẽ chỉ được chèn vào meal time)
+            if should_insert_restaurant_for_meal and place.get('category') == 'Restaurant':
+                continue
             
             combined = self.calculate_combined_score(
                 place_idx=i,
@@ -723,22 +807,47 @@ class RouteBuilder:
         
         first_candidates.sort(key=lambda x: x[1], reverse=True)
         
+        # 🍽️ Kiểm tra xem có cần ưu tiên Restaurant cho POI đầu tiên không
+        # CHỈ ưu tiên khi: Đang trong chế độ chèn cho meal VÀ có overlap meal time
+        should_prioritize_restaurant_first = False
+        
+        if should_insert_restaurant_for_meal and current_datetime and max_time_minutes:
+            meal_check = TimeUtils.check_overlap_with_meal_times(current_datetime, max_time_minutes)
+            if meal_check["needs_restaurant"]:
+                # Tính thời gian đến POI đầu tiên (candidate có score cao nhất)
+                if first_candidates:
+                    first_idx = first_candidates[0][0]
+                    travel_time = self.calculate_travel_time(
+                        distance_matrix[0][first_idx + 1],
+                        transportation_mode
+                    )
+                    arrival_at_first = TimeUtils.get_arrival_time(current_datetime, travel_time)
+                    
+                    # Kiểm tra xem arrival time có trong meal window không
+                    for meal_type, window in [("lunch", meal_check.get("lunch_window")), ("dinner", meal_check.get("dinner_window"))]:
+                        if window:
+                            meal_start, meal_end = window
+                            if meal_start <= arrival_at_first <= meal_end:
+                                should_prioritize_restaurant_first = True
+                                print(f"🍽️  Đến POI đầu lúc {arrival_at_first.strftime('%H:%M')} (trong {meal_type}) → Ưu tiên Restaurant")
+                                break
+        
         # Lấy địa điểm có score cao nhất làm điểm đầu tiên BẮT BUỘC
-        # NHƯNG: Nếu có Food và chỉ có 1-2 options, BẮT BUỘC chọn Food đầu tiên
+        # NHƯNG: Nếu cần ưu tiên Restaurant, BẮT BUỘC chọn Restaurant đầu tiên
         best_first_place = None
         
-        if should_prioritize_food:
-            # Tìm POI "Food & Local Flavours" có score cao nhất
+        if should_prioritize_restaurant_first:
+            # Tìm POI "Restaurant" có score cao nhất
             food_candidates = [
                 (idx, score) for idx, score, cat in first_candidates 
-                if cat == "Food & Local Flavours"
+                if cat == "Restaurant"
             ]
             if food_candidates:
                 best_first_place = food_candidates[0][0]
-                print(f"🍽️  BẮT BUỘC chọn 'Food & Local Flavours' đầu tiên: {places[best_first_place]['name']} (score={places[best_first_place]['score']:.3f})")
+                print(f"🍽️  BẮT BUỘC chọn 'Restaurant' đầu tiên: {places[best_first_place]['name']} (score={places[best_first_place]['score']:.3f})")
             else:
                 best_first_place = first_candidates[0][0]
-                print(f"⚠️ Không tìm thấy 'Food & Local Flavours', chọn POI cao nhất: {places[best_first_place]['name']}")
+                print(f"⚠️ Không tìm thấy 'Restaurant', chọn POI cao nhất: {places[best_first_place]['name']}")
         else:
             # Trường hợp bình thường: chọn POI có score cao nhất
             best_first_place = first_candidates[0][0]
