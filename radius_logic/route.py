@@ -269,7 +269,9 @@ class RouteBuilder:
         max_time_minutes: int,
         target_places: int,
         first_place_idx: Optional[int] = None,
-        current_datetime: Optional[datetime] = None
+        current_datetime: Optional[datetime] = None,
+        distance_matrix: Optional[List[List[float]]] = None,
+        max_distance: Optional[float] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Xây dựng 1 lộ trình theo thuật toán Greedy
@@ -282,6 +284,8 @@ class RouteBuilder:
             target_places: Số địa điểm muốn đi
             first_place_idx: Index điểm xuất phát (None = tự động chọn)
             current_datetime: Thời điểm hiện tại của user (để kiểm tra opening hours)
+            distance_matrix: Ma trận khoảng cách (tính sẵn để tránh tính lại)
+            max_distance: Khoảng cách tối đa (tính sẵn để tránh tính lại)
             
         Returns:
             Dict chứa thông tin lộ trình hoặc None nếu không khả thi
@@ -289,14 +293,38 @@ class RouteBuilder:
         if target_places > len(places):
             return None
         
-        # 1. Xây dựng distance matrix
-        distance_matrix = self.build_distance_matrix(user_location, places)
+        # 1. Xây dựng distance matrix (nếu chưa có)
+        if distance_matrix is None:
+            distance_matrix = self.build_distance_matrix(user_location, places)
         
-        # Tìm max distance để normalize
-        max_distance = max(max(row) for row in distance_matrix)
+        # Tìm max distance để normalize (nếu chưa có)
+        if max_distance is None:
+            max_distance = max(max(row) for row in distance_matrix)
         
         # Tính radius (khoảng cách xa nhất từ user)
         max_radius = max(distance_matrix[0][1:])
+        
+        # 🔧 TÍNH TRƯỚC: Category analysis và meal logic (để tránh NameError khi dùng sau)
+        # Lấy danh sách tất cả category có trong places (GIỮ THỨ TỰ xuất hiện)
+        all_categories = list(dict.fromkeys(place.get('category') for place in places if 'category' in place))
+        has_cafe = "Cafe & Bakery" in all_categories
+        has_restaurant = "Restaurant" in all_categories
+        
+        # Xác định có cần chèn Restaurant cho meal time không
+        should_insert_restaurant_for_meal = False
+        meal_windows = None
+        
+        if not has_cafe and has_restaurant:
+            # Không có Cafe nhưng có Restaurant → Chắc chắn do overlap meal time
+            if current_datetime and max_time_minutes:
+                meal_check = TimeUtils.check_overlap_with_meal_times(current_datetime, max_time_minutes)
+                if meal_check["needs_restaurant"]:
+                    should_insert_restaurant_for_meal = True
+                    meal_windows = {
+                        "lunch": meal_check.get("lunch_window"),
+                        "dinner": meal_check.get("dinner_window")
+                    }
+                    print(f"🍽️  Không có Cafe & Bakery nhưng có Restaurant → Chèn ĐÚNG 1 Restaurant vào meal time")
         
         # 2. Chọn điểm đầu tiên
         route = []
@@ -363,33 +391,8 @@ class RouteBuilder:
         if 'category' in places[best_first]:
             category_sequence.append(places[best_first].get('category'))
         
-        # Lấy danh sách tất cả category có trong places
-        all_categories = list(set(place.get('category') for place in places if 'category' in place))
-        
-        # 🍽️ Kiểm tra xem có cần chèn Restaurant vào meal times không
-        # Logic: Nếu có "Cafe & Bakery" → User chọn Food → Xen kẽ tự nhiên
-        #        Nếu KHÔNG có "Cafe & Bakery" nhưng có "Restaurant" → Do overlap meal time → Chèn 1 POI Restaurant
-        has_cafe = "Cafe & Bakery" in all_categories
-        has_restaurant = "Restaurant" in all_categories
-        
-        # Nếu có Cafe & Bakery → User chọn Food → Xen kẽ bình thường
-        should_insert_restaurant_for_meal = False
-        meal_windows = None
-        restaurant_inserted_for_meal = False
-        
-        if not has_cafe and has_restaurant:
-            # Không có Cafe nhưng có Restaurant → Chắc chắn do overlap meal time
-            if current_datetime and max_time_minutes:
-                meal_check = TimeUtils.check_overlap_with_meal_times(current_datetime, max_time_minutes)
-                if meal_check["needs_restaurant"]:
-                    should_insert_restaurant_for_meal = True
-                    meal_windows = {
-                        "lunch": meal_check.get("lunch_window"),
-                        "dinner": meal_check.get("dinner_window")
-                    }
-                    print(f"🍽️  Không có Cafe & Bakery nhưng có Restaurant → Chèn ĐÚNG 1 Restaurant vào meal time")
-        
         # ⚠️ KIỂM TRA: Nếu POI đầu tiên là Restaurant và đang trong chế độ meal → Đánh dấu đã chèn
+        restaurant_inserted_for_meal = False
         if should_insert_restaurant_for_meal and places[best_first].get('category') == 'Restaurant':
             restaurant_inserted_for_meal = True
             print(f"✅ POI đầu đã là Restaurant → Không chọn Restaurant nữa cho các POI sau")
@@ -791,8 +794,8 @@ class RouteBuilder:
         distance_matrix = self.build_distance_matrix(user_location, places)
         max_distance = max(max(row) for row in distance_matrix)
         
-        # Kiểm tra categories có trong places
-        all_categories = list(set(place.get('category') for place in places if 'category' in place))
+        # Kiểm tra categories có trong places (GIỮ THỨ TỰ xuất hiện)
+        all_categories = list(dict.fromkeys(place.get('category') for place in places if 'category' in place))
         has_cafe = "Cafe & Bakery" in all_categories
         has_restaurant = "Restaurant" in all_categories
         
@@ -913,7 +916,9 @@ class RouteBuilder:
             max_time_minutes=max_time_minutes,
             target_places=target_places,
             first_place_idx=best_first_place,
-            current_datetime=current_datetime
+            current_datetime=current_datetime,
+            distance_matrix=distance_matrix,
+            max_distance=max_distance
         )
         
         if route_1 is None:
@@ -939,7 +944,9 @@ class RouteBuilder:
                     max_time_minutes=max_time_minutes,
                     target_places=target_places,
                     first_place_idx=first_idx,
-                    current_datetime=current_datetime
+                    current_datetime=current_datetime,
+                    distance_matrix=distance_matrix,
+                    max_distance=max_distance
                 )
                 
                 if route_result is None:
