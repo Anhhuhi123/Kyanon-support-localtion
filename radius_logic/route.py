@@ -134,6 +134,47 @@ class RouteBuilder:
         
         return R * c
     
+    def calculate_bearing(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """
+        Tính hướng (bearing) từ điểm 1 đến điểm 2 (độ, 0-360)
+        0° = Bắc, 90° = Đông, 180° = Nam, 270° = Tây
+        
+        Args:
+            lat1, lon1: Tọa độ điểm 1
+            lat2, lon2: Tọa độ điểm 2
+            
+        Returns:
+            Bearing (độ, 0-360)
+        """
+        lat1_rad = math.radians(lat1)
+        lat2_rad = math.radians(lat2)
+        delta_lon = math.radians(lon2 - lon1)
+        
+        x = math.sin(delta_lon) * math.cos(lat2_rad)
+        y = math.cos(lat1_rad) * math.sin(lat2_rad) - math.sin(lat1_rad) * math.cos(lat2_rad) * math.cos(delta_lon)
+        
+        bearing_rad = math.atan2(x, y)
+        bearing_deg = math.degrees(bearing_rad)
+        
+        # Chuyển về 0-360
+        return (bearing_deg + 360) % 360
+    
+    def calculate_bearing_difference(self, bearing1: float, bearing2: float) -> float:
+        """
+        Tính độ chênh lệch góc giữa 2 hướng (0-180 độ)
+        
+        Args:
+            bearing1: Hướng 1 (độ)
+            bearing2: Hướng 2 (độ)
+            
+        Returns:
+            Độ chênh lệch (0-180 độ). 0 = cùng hướng, 180 = ngược hướng
+        """
+        diff = abs(bearing1 - bearing2)
+        if diff > 180:
+            diff = 360 - diff
+        return diff
+    
     def calculate_travel_time(self, distance_km: float, transportation_mode: str) -> float:
         """
         Tính thời gian di chuyển (phút)
@@ -202,16 +243,18 @@ class RouteBuilder:
         max_distance: float,
         is_first: bool = False,
         is_last: bool = False,
-        start_pos_index: Optional[int] = None
+        start_pos_index: Optional[int] = None,
+        prev_bearing: Optional[float] = None,
+        user_location: Optional[Tuple[float, float]] = None
     ) -> float:
         """
-        Tính điểm kết hợp: distance + similarity + rating
+        Tính điểm kết hợp: distance + similarity + rating + bearing (hướng)
         
         Công thức:
-        - POI đầu: 0.2*distance + 0.4*similarity + 0.4*rating
-        - POI giữa: 
-          + Nếu similarity >= 0.8: 0.2*distance + 0.4*similarity + 0.4*rating
-          + Nếu similarity < 0.8:  0.3*distance + 0.3*similarity + 0.4*rating
+        - POI đầu: 0.1*distance + 0.45*similarity + 0.45*rating
+        - POI giữa: thêm yếu tố bearing để tránh zíc zắc
+          + Nếu similarity >= 0.8: 0.15*distance + 0.5*similarity + 0.3*rating + 0.05*bearing
+          + Nếu similarity < 0.8:  0.25*distance + 0.1*similarity + 0.4*rating + 0.25*bearing
         - POI cuối: ưu tiên gần user (0.4*distance + 0.3*similarity + 0.3*rating)
         
         Args:
@@ -222,6 +265,8 @@ class RouteBuilder:
             max_distance: Khoảng cách tối đa để normalize
             is_first: Có phải POI đầu tiên không
             is_last: Có phải POI cuối cùng không
+            prev_bearing: Hướng di chuyển trước đó (cho POI giữa)
+            user_location: Tọa độ user (lat, lon) để tính bearing
             
         Returns:
             Combined score (cao hơn = tốt hơn)
@@ -245,19 +290,41 @@ class RouteBuilder:
         normalized_distance = distance_km / max_distance if max_distance > 0 else 0
         distance_score = 1 - normalized_distance
         
+        # Tính bearing score (chỉ cho POI giữa)
+        bearing_score = 0.5  # Mặc định trung tính
+        if not is_first and not is_last and prev_bearing is not None and user_location:
+            # Lấy tọa độ điểm hiện tại và điểm tiếp theo
+            if current_pos == 0:  # Từ user
+                current_lat, current_lon = user_location
+            else:
+                current_place = places[current_pos - 1]
+                current_lat, current_lon = current_place["lat"], current_place["lon"]
+            
+            next_place = places[place_idx]
+            next_lat, next_lon = next_place["lat"], next_place["lon"]
+            
+            # Tính hướng từ điểm hiện tại đến điểm tiếp theo
+            current_bearing = self.calculate_bearing(current_lat, current_lon, next_lat, next_lon)
+            
+            # Tính độ chênh lệch góc (0-180)
+            bearing_diff = self.calculate_bearing_difference(prev_bearing, current_bearing)
+            
+            # Chuyển thành điểm: 0° (cùng hướng) = 1.0, 180° (ngược hướng) = 0.0
+            bearing_score = 1.0 - (bearing_diff / 180.0)
+        
         # Tính combined score theo công thức
         if is_first:
-            # POI đầu: 0.2*distance + 0.4*similarity + 0.4*rating
+            # POI đầu: 0.1*distance + 0.45*similarity + 0.45*rating
             combined = 0.1 * distance_score + 0.45 * similarity + 0.45 * rating
         elif is_last:
             # POI cuối: ưu tiên gần user
             combined = 0.4 * distance_score + 0.3 * similarity + 0.3 * rating
         else:
-            # POI giữa: phụ thuộc vào similarity
+            # POI giữa: thêm yếu tố bearing để tránh zíc zắc
             if similarity >= 0.8:
-                combined = 0.2 * distance_score + 0.5 * similarity + 0.3 * rating
+                combined = 0.15 * distance_score + 0.3 * similarity + 0.3 * rating + 0.25 * bearing_score
             else:
-                combined = 0.3 * distance_score + 0.1 * similarity + 0.4 * rating
+                combined = 0.25 * distance_score + 0.1 * similarity + 0.4 * rating + 0.25 * bearing_score
         
         return combined
     
@@ -385,6 +452,12 @@ class RouteBuilder:
         total_stay_time += stay_time
         current_pos = best_first + 1
         
+        # Tính bearing từ user đến POI đầu (để dùng cho POI thứ 2)
+        prev_bearing = self.calculate_bearing(
+            user_location[0], user_location[1],
+            places[best_first]["lat"], places[best_first]["lon"]
+        )
+        
         # 3. Chọn các điểm tiếp theo (trừ điểm cuối) - BẮT BUỘC XEN KẼ CATEGORY
         # Track thứ tự category đã dùng
         category_sequence = []
@@ -492,7 +565,9 @@ class RouteBuilder:
                     current_pos=current_pos,
                     places=places,
                     distance_matrix=distance_matrix,
-                    max_distance=max_distance
+                    max_distance=max_distance,
+                    prev_bearing=prev_bearing,
+                    user_location=user_location
                 )
                 
                 # Kiểm tra thời gian khả thi
@@ -548,7 +623,9 @@ class RouteBuilder:
                         current_pos=current_pos,
                         places=places,
                         distance_matrix=distance_matrix,
-                        max_distance=max_distance
+                        max_distance=max_distance,
+                        prev_bearing=prev_bearing,
+                        user_location=user_location
                     )
                     
                     # Kiểm tra thời gian khả thi
@@ -585,6 +662,22 @@ class RouteBuilder:
             stay_time = self.get_stay_time(places[best_next].get("poi_type", ""))
             total_travel_time += travel_time
             total_stay_time += stay_time
+            
+            # Cập nhật bearing cho bước tiếp theo
+            prev_place = places[route[-2]] if len(route) >= 2 else None
+            current_place = places[best_next]
+            if prev_place:
+                prev_bearing = self.calculate_bearing(
+                    prev_place["lat"], prev_place["lon"],
+                    current_place["lat"], current_place["lon"]
+                )
+            else:
+                # Nếu chỉ có 1 POI trước đó, tính từ user
+                prev_bearing = self.calculate_bearing(
+                    user_location[0], user_location[1],
+                    current_place["lat"], current_place["lon"]
+                )
+            
             current_pos = best_next + 1
         
         # 4. Chọn điểm cuối (gần user) - với tăng dần bán kính nếu không tìm thấy
