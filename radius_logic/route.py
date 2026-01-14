@@ -389,6 +389,11 @@ class RouteBuilder:
                     }
                     print(f"🍽️  Không có Cafe & Bakery nhưng có Restaurant → Chèn ĐÚNG 1 Restaurant vào meal time")
         
+        # ⚠️ KIỂM TRA: Nếu POI đầu tiên là Restaurant và đang trong chế độ meal → Đánh dấu đã chèn
+        if should_insert_restaurant_for_meal and places[best_first].get('category') == 'Restaurant':
+            restaurant_inserted_for_meal = True
+            print(f"✅ POI đầu đã là Restaurant → Không chọn Restaurant nữa cho các POI sau")
+        
         # target_places là số POI cần đi (không tính user)
         # Đã có 1 POI đầu, cần chọn (target_places - 2) POI giữa, và 1 POI cuối
         for step in range(target_places - 2):
@@ -593,10 +598,32 @@ class RouteBuilder:
                 if i in visited:
                     continue
                 
-                # 🍽️ Nếu đang trong chế độ chèn meal VÀ đã chèn Restaurant rồi → Loại Restaurant khỏi POI cuối
-                if should_insert_restaurant_for_meal and restaurant_inserted_for_meal:
-                    if place.get('category') == 'Restaurant':
+                # 🍽️ Logic lọc Restaurant cho POI cuối
+                if should_insert_restaurant_for_meal and place.get('category') == 'Restaurant':
+                    # Nếu đã chèn Restaurant rồi → Loại bỏ
+                    if restaurant_inserted_for_meal:
                         continue
+                    
+                    # Nếu chưa chèn Restaurant → Chỉ cho phép nếu arrival time nằm trong meal window
+                    if current_datetime and meal_windows:
+                        travel_time_to_last = self.calculate_travel_time(
+                            distance_matrix[current_pos][i + 1],
+                            transportation_mode
+                        )
+                        arrival_at_last = current_datetime + timedelta(minutes=total_travel_time + total_stay_time + travel_time_to_last)
+                        
+                        # Kiểm tra xem có nằm trong meal window không
+                        in_meal_window = False
+                        for meal_type, window in meal_windows.items():
+                            if window:
+                                meal_start, meal_end = window
+                                if meal_start <= arrival_at_last <= meal_end:
+                                    in_meal_window = True
+                                    break
+                        
+                        # Nếu KHÔNG nằm trong meal window → Loại bỏ Restaurant
+                        if not in_meal_window:
+                            continue
                 
                 # Kiểm tra khoảng cách đến user
                 dist_to_user = distance_matrix[i + 1][0]
@@ -837,17 +864,42 @@ class RouteBuilder:
         best_first_place = None
         
         if should_prioritize_restaurant_first:
-            # Tìm POI "Restaurant" có score cao nhất
-            food_candidates = [
-                (idx, score) for idx, score, cat in first_candidates 
-                if cat == "Restaurant"
-            ]
-            if food_candidates:
-                best_first_place = food_candidates[0][0]
+            # ⚠️ BUG FIX: Tìm Restaurant trực tiếp trong places (không dùng first_candidates đã lọc bỏ Restaurant)
+            restaurant_candidates = []
+            for i, place in enumerate(places):
+                if place.get('category') != 'Restaurant':
+                    continue
+                
+                # Kiểm tra opening hours
+                if current_datetime:
+                    travel_time = self.calculate_travel_time(
+                        distance_matrix[0][i + 1],
+                        transportation_mode
+                    )
+                    arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
+                    
+                    if not self.is_poi_available_at_time(place, arrival_time):
+                        continue
+                
+                # Tính combined score
+                combined = self.calculate_combined_score(
+                    place_idx=i,
+                    current_pos=0,
+                    places=places,
+                    distance_matrix=distance_matrix,
+                    max_distance=max_distance,
+                    is_first=True
+                )
+                restaurant_candidates.append((i, combined))
+            
+            # Sắp xếp theo score và chọn Restaurant cao nhất
+            if restaurant_candidates:
+                restaurant_candidates.sort(key=lambda x: x[1], reverse=True)
+                best_first_place = restaurant_candidates[0][0]
                 print(f"🍽️  BẮT BUỘC chọn 'Restaurant' đầu tiên: {places[best_first_place]['name']} (score={places[best_first_place]['score']:.3f})")
             else:
                 best_first_place = first_candidates[0][0]
-                print(f"⚠️ Không tìm thấy 'Restaurant', chọn POI cao nhất: {places[best_first_place]['name']}")
+                print(f"⚠️ Không có Restaurant mở cửa, chọn POI cao nhất: {places[best_first_place]['name']}")
         else:
             # Trường hợp bình thường: chọn POI có score cao nhất
             best_first_place = first_candidates[0][0]

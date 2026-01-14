@@ -9,10 +9,9 @@ load_dotenv()
 class TransportationMode(str, Enum):
     """Enum cho các phương tiện di chuyển"""
     WALKING = "WALKING"
-    BICYCLING = "BICYCLING"
-    TRANSIT = "TRANSIT"
+    BIKE = "BIKE"
+    CAR = "CAR"
     FLEXIBLE = "FLEXIBLE"
-    DRIVING = "DRIVING"
 
 class Config:
     """Cấu hình tổng hợp cho toàn bộ ứng dụng"""
@@ -61,19 +60,16 @@ class Config:
     # k=20: ~5.8km (1261 cells), k=30: ~8.6km (2791 cells), k=40: ~11.5km (4921 cells)
     TRANSPORTATION_CONFIG: Dict[str, Dict[str, int]] = {
         TransportationMode.WALKING: {
-            "h3_k_ring": 10         # k=15: ~2.8km coverage (721 cells)
+            "h3_k_ring": 8         # k=8: ~2.2km coverage (721 cells)
         },
-        TransportationMode.BICYCLING: {
-            "h3_k_ring": 30          # k=30: ~8.6km coverage (2791 cells)
+        TransportationMode.BIKE: {
+            "h3_k_ring": 20          # k=20: ~5.8km coverage (1961 cells)
         },
-        TransportationMode.TRANSIT: {
-            "h3_k_ring": 35          # k=35: ~10km coverage (4921 cells)
-        },
-        TransportationMode.FLEXIBLE: {
+        TransportationMode.CAR: {
             "h3_k_ring": 40          # k=40: ~11.5km coverage (4921 cells)
         },
-        TransportationMode.DRIVING: {
-            "h3_k_ring": 80         # k=80: ~23km coverage (30301 cells)
+        TransportationMode.FLEXIBLE: {
+            "h3_k_ring": 30          # k=30: ~8.6km coverage (2791 cells)
         }
     }
     
