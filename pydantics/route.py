@@ -35,3 +35,11 @@ class RouteSearchRequest(BaseModel):
     max_routes: Optional[int] = Field(3, description="Số lộ trình tối đa", json_schema_extra={"example": 1})
     top_k_semantic: Optional[int] = Field(10, description="Số địa điểm từ semantic search", json_schema_extra={"example": 10})
 
+
+class UpdatePOIRequest(BaseModel):
+    """Request model cho update POI trong route"""
+    user_id: UUID = Field(..., description="UUID của user", json_schema_extra={"example": "816d05bf-5b65-49d2-9087-77c4c83be655"})
+    route_id: str = Field(..., description="ID của route (từ cache)", json_schema_extra={"example": "1"})
+    poi_id_to_replace: str = Field(..., description="ID của POI cần thay thế", json_schema_extra={"example": "123e4567-e89b-12d3-a456-426614174000"})
+    current_time: Optional[datetime] = Field(None, description="Thời điểm hiện tại của user (ISO format). Nếu None, không lọc theo thời gian mở cửa", json_schema_extra={"example": "2026-01-13T08:00:00"})
+

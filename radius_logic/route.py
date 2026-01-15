@@ -2,14 +2,17 @@
 Route Builder Service
 Xây dựng lộ trình tối ưu từ danh sách địa điểm sử dụng thuật toán Greedy
 """
-import math
 import asyncio
 import functools
 from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
-from config.config import Config
 from utils.time_utils import TimeUtils
+from .route.route_config import RouteConfig
+from .route.geographic_utils import GeographicUtils
+from .route.poi_validator import POIValidator
+from .route.calculator import Calculator
+from .route.route_builder_greedy import GreedyRouteBuilder
 
 class RouteBuilder:
     """
@@ -24,837 +27,21 @@ class RouteBuilder:
     """
     
     # Thời gian tham quan cố định cho tất cả địa điểm (phút)
-    DEFAULT_STAY_TIME = 30
+    DEFAULT_STAY_TIME = RouteConfig.DEFAULT_STAY_TIME
     
-    # Tốc độ di chuyển theo phương tiện (km/h)
-    TRANSPORTATION_SPEEDS = {
-        "WALKING": 5,
-        "BICYCLING": 15,
-        "TRANSIT": 25,
-        "FLEXIBLE": 30,
-        "DRIVING": 40
-    }
     
     def __init__(self):
         """Khởi tạo RouteBuilder"""
-        pass
-    
-    def is_poi_available_at_time(
-        self,
-        place: Dict[str, Any],
-        arrival_datetime: datetime
-    ) -> bool:
-        """
-        Kiểm tra POI có sẵn sàng tại thời điểm đến (có đủ thời gian stay)
-        
-        Args:
-            place: POI cần kiểm tra
-            arrival_datetime: Thời điểm đến POI
-            
-        Returns:
-            True nếu POI mở cửa và có đủ thời gian stay
-        """
-        if not arrival_datetime:
-            return True
-        
-        stay_time = self.get_stay_time(place.get("poi_type", ""))
-        return TimeUtils.has_enough_time_to_stay(
-            place.get('open_hours', []), 
-            arrival_datetime, 
-            stay_time
-        )
-    
-    def is_same_food_type(self, place1: Dict[str, Any], place2: Dict[str, Any]) -> bool:
-        """
-        Kiểm tra xem 2 POI có giống nhau ở CẢ 3 level hay không
-        (poi_type_clean, main_subcategory, specialization)
-        
-        Chỉ áp dụng cho Restaurant, Bar, Cafe & Bakery.
-        Return True nếu GIỐNG NHAU ở cả 3 level -> KHÔNG cho phép liên tiếp
-        
-        Args:
-            place1: POI thứ nhất
-            place2: POI thứ hai
-            
-        Returns:
-            True nếu giống nhau ở cả 3 level (không cho phép liên tiếp)
-            False nếu khác nhau ở ít nhất 1 level (cho phép liên tiếp)
-        """
-        # Danh sách food categories cần kiểm tra
-        FOOD_CATEGORIES = ["Restaurant", "Bar", "Cafe & Bakery"]
-        
-        # Lấy poi_type_clean
-        poi_type1 = place1.get("poi_type_clean", "")
-        poi_type2 = place2.get("poi_type_clean", "")
-        
-        # Nếu không phải food category, cho phép liên tiếp (return False)
-        if poi_type1 not in FOOD_CATEGORIES or poi_type2 not in FOOD_CATEGORIES:
-            return False
-        
-        # Level 1: So sánh poi_type_clean
-        if poi_type1 != poi_type2:
-            return False  # Khác nhau ở level 1 -> cho phép liên tiếp
-        
-        # Level 2: So sánh main_subcategory
-        main_sub1 = place1.get("main_subcategory")
-        main_sub2 = place2.get("main_subcategory")
-        
-        if main_sub1 != main_sub2:
-            return False  # Khác nhau ở level 2 -> cho phép liên tiếp
-        
-        # Level 3: So sánh specialization
-        spec1 = place1.get("specialization")
-        spec2 = place2.get("specialization")
-        
-        if spec1 != spec2:
-            return False  # Khác nhau ở level 3 -> cho phép liên tiếp
-        
-        # Giống nhau ở cả 3 level -> KHÔNG cho phép liên tiếp
-        return True
-    
-    def calculate_distance_haversine(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-        """
-        Tính khoảng cách Haversine giữa 2 điểm (km)
-        NHANH HƠN PostGIS rất nhiều (không cần connect DB)
-        Đủ chính xác cho khoảng cách ngắn (< 100km)
-        
-        Args:
-            lat1, lon1: Tọa độ điểm 1
-            lat2, lon2: Tọa độ điểm 2
-            
-        Returns:
-            Khoảng cách (km)
-        """
-        R = 6371  # Bán kính trái đất (km)
-        
-        lat1_rad = math.radians(lat1)
-        lat2_rad = math.radians(lat2)
-        delta_lat = math.radians(lat2 - lat1)
-        delta_lon = math.radians(lon2 - lon1)
-        
-        a = math.sin(delta_lat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(delta_lon/2)**2
-        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-        
-        return R * c
-    
-    def calculate_bearing(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-        """
-        Tính hướng (bearing) từ điểm 1 đến điểm 2 (độ, 0-360)
-        0° = Bắc, 90° = Đông, 180° = Nam, 270° = Tây
-        
-        Args:
-            lat1, lon1: Tọa độ điểm 1
-            lat2, lon2: Tọa độ điểm 2
-            
-        Returns:
-            Bearing (độ, 0-360)
-        """
-        lat1_rad = math.radians(lat1)
-        lat2_rad = math.radians(lat2)
-        delta_lon = math.radians(lon2 - lon1)
-        
-        x = math.sin(delta_lon) * math.cos(lat2_rad)
-        y = math.cos(lat1_rad) * math.sin(lat2_rad) - math.sin(lat1_rad) * math.cos(lat2_rad) * math.cos(delta_lon)
-        
-        bearing_rad = math.atan2(x, y)
-        bearing_deg = math.degrees(bearing_rad)
-        
-        # Chuyển về 0-360
-        return (bearing_deg + 360) % 360
-    
-    def calculate_bearing_difference(self, bearing1: float, bearing2: float) -> float:
-        """
-        Tính độ chênh lệch góc giữa 2 hướng (0-180 độ)
-        
-        Args:
-            bearing1: Hướng 1 (độ)
-            bearing2: Hướng 2 (độ)
-            
-        Returns:
-            Độ chênh lệch (0-180 độ). 0 = cùng hướng, 180 = ngược hướng
-        """
-        diff = abs(bearing1 - bearing2)
-        if diff > 180:
-            diff = 360 - diff
-        return diff
-    
-    def calculate_travel_time(self, distance_km: float, transportation_mode: str) -> float:
-        """
-        Tính thời gian di chuyển (phút)
-        
-        Args:
-            distance_km: Khoảng cách (km)
-            transportation_mode: Phương tiện
-            
-        Returns:
-            Thời gian (phút)
-        """
-        speed = self.TRANSPORTATION_SPEEDS.get(transportation_mode.upper(), 30)
-        return (distance_km / speed) * 60  # Chuyển giờ sang phút
-    
-    def get_stay_time(self, poi_type: str) -> int:
-        """
-        Lấy thời gian tham quan cố định (phút)
-        
-        Args:
-            poi_type: Loại POI (không sử dụng)
-            
-        Returns:
-            Thời gian tham quan cố định 30 phút
-        """
-        return self.DEFAULT_STAY_TIME
-    
-    def build_distance_matrix(
-        self,
-        user_location: Tuple[float, float],
-        places: List[Dict[str, Any]]
-    ) -> List[List[float]]:
-        """
-        Xây dựng ma trận khoảng cách sử dụng Haversine (NHANH)
-        
-        Args:
-            user_location: (lat, lon) của user
-            places: Danh sách địa điểm
-            
-        Returns:
-            Ma trận khoảng cách [n+1][n+1] (index 0 là user)
-        """
-        n = len(places)
-        matrix = [[0.0] * (n + 1) for _ in range(n + 1)]
-        
-        # Tọa độ tất cả điểm (0 = user, 1-n = places)
-        coords = [user_location] + [(p["lat"], p["lon"]) for p in places]
-        
-        # Tính khoảng cách giữa mọi cặp điểm bằng Haversine (NHANH)
-        for i in range(n + 1):
-            for j in range(i + 1, n + 1):  # Chỉ tính nửa trên, copy sang nửa dưới
-                dist = self.calculate_distance_haversine(
-                    coords[i][0], coords[i][1],
-                    coords[j][0], coords[j][1]
-                )
-                matrix[i][j] = dist
-                matrix[j][i] = dist  # Ma trận đối xứng
-        
-        return matrix
-    
-    def calculate_combined_score(
-        self,
-        place_idx: int,
-        current_pos: int,
-        places: List[Dict[str, Any]],
-        distance_matrix: List[List[float]],
-        max_distance: float,
-        is_first: bool = False,
-        is_last: bool = False,
-        start_pos_index: Optional[int] = None,
-        prev_bearing: Optional[float] = None,
-        user_location: Optional[Tuple[float, float]] = None
-    ) -> float:
-        """
-        Tính điểm kết hợp: distance + similarity + rating + bearing (hướng)
-        
-        Công thức:
-        - POI đầu: 0.1*distance + 0.45*similarity + 0.45*rating
-        - POI giữa: thêm yếu tố bearing để tránh zíc zắc
-          + Nếu similarity >= 0.8: 0.15*distance + 0.5*similarity + 0.3*rating + 0.05*bearing
-          + Nếu similarity < 0.8:  0.25*distance + 0.1*similarity + 0.4*rating + 0.25*bearing
-        - POI cuối: ưu tiên gần user (0.4*distance + 0.3*similarity + 0.3*rating)
-        
-        Args:
-            place_idx: Index địa điểm cần tính (0-based trong places list)
-            current_pos: Vị trí hiện tại (0 = user, 1-n = places)
-            places: Danh sách địa điểm
-            distance_matrix: Ma trận khoảng cách
-            max_distance: Khoảng cách tối đa để normalize
-            is_first: Có phải POI đầu tiên không
-            is_last: Có phải POI cuối cùng không
-            prev_bearing: Hướng di chuyển trước đó (cho POI giữa)
-            user_location: Tọa độ user (lat, lon) để tính bearing
-            
-        Returns:
-            Combined score (cao hơn = tốt hơn)
-        """
-        place = places[place_idx]
-        
-        # similarity (score từ Qdrant, đã normalize 0-1)
-        similarity = place["score"]
-        
-        # rating (normalize_stars_reviews từ DB, đã normalize 0-1)
-        rating = float(place.get("rating") or 0.5)
-        
-        # Nếu là POI cuối, tính khoảng cách từ place đến user (index 0)
-        # Ngược lại tính khoảng cách từ current_pos đến place
-        if is_last:
-            distance_km = distance_matrix[place_idx + 1][0]  # Khoảng cách place -> user
-        else:
-            distance_km = distance_matrix[current_pos][place_idx + 1]  # Khoảng cách current -> place
-        
-        # Normalize distance (đảo ngược: gần = điểm cao)
-        normalized_distance = distance_km / max_distance if max_distance > 0 else 0
-        distance_score = 1 - normalized_distance
-        
-        # Tính bearing score (chỉ cho POI giữa)
-        bearing_score = 0.5  # Mặc định trung tính
-        if not is_first and not is_last and prev_bearing is not None and user_location:
-            # Lấy tọa độ điểm hiện tại và điểm tiếp theo
-            if current_pos == 0:  # Từ user
-                current_lat, current_lon = user_location
-            else:
-                current_place = places[current_pos - 1]
-                current_lat, current_lon = current_place["lat"], current_place["lon"]
-            
-            next_place = places[place_idx]
-            next_lat, next_lon = next_place["lat"], next_place["lon"]
-            
-            # Tính hướng từ điểm hiện tại đến điểm tiếp theo
-            current_bearing = self.calculate_bearing(current_lat, current_lon, next_lat, next_lon)
-            
-            # Tính độ chênh lệch góc (0-180)
-            bearing_diff = self.calculate_bearing_difference(prev_bearing, current_bearing)
-            
-            # Chuyển thành điểm: 0° (cùng hướng) = 1.0, 180° (ngược hướng) = 0.0
-            bearing_score = 1.0 - (bearing_diff / 180.0)
-        
-        # Tính combined score theo công thức
-        if is_first:
-            # POI đầu: 0.1*distance + 0.45*similarity + 0.45*rating
-            combined = 0.1 * distance_score + 0.45 * similarity + 0.45 * rating
-        elif is_last:
-            # POI cuối: ưu tiên gần user
-            combined = 0.4 * distance_score + 0.3 * similarity + 0.3 * rating
-        else:
-            # POI giữa: thêm yếu tố bearing để tránh zíc zắc
-            if similarity >= 0.8:
-                combined = 0.15 * distance_score + 0.3 * similarity + 0.3 * rating + 0.25 * bearing_score
-            else:
-                combined = 0.25 * distance_score + 0.1 * similarity + 0.4 * rating + 0.25 * bearing_score
-        
-        return combined
-    
-    def build_single_route_greedy(
-        self,
-        user_location: Tuple[float, float],
-        places: List[Dict[str, Any]],
-        transportation_mode: str,
-        max_time_minutes: int,
-        target_places: int,
-        first_place_idx: Optional[int] = None,
-        current_datetime: Optional[datetime] = None,
-        distance_matrix: Optional[List[List[float]]] = None,
-        max_distance: Optional[float] = None
-    ) -> Optional[Dict[str, Any]]:
-        """
-        Xây dựng 1 lộ trình theo thuật toán Greedy
-        
-        Args:
-            user_location: (lat, lon) của user
-            places: Danh sách địa điểm (mỗi place có: id, name, score, lat, lon, poi_type)
-            transportation_mode: Phương tiện di chuyển
-            max_time_minutes: Thời gian tối đa (phút)
-            target_places: Số địa điểm muốn đi
-            first_place_idx: Index điểm xuất phát (None = tự động chọn)
-            current_datetime: Thời điểm hiện tại của user (để kiểm tra opening hours)
-            distance_matrix: Ma trận khoảng cách (tính sẵn để tránh tính lại)
-            max_distance: Khoảng cách tối đa (tính sẵn để tránh tính lại)
-            
-        Returns:
-            Dict chứa thông tin lộ trình hoặc None nếu không khả thi
-        """
-        if target_places > len(places):
-            return None
-        
-        # 1. Xây dựng distance matrix (nếu chưa có)
-        if distance_matrix is None:
-            distance_matrix = self.build_distance_matrix(user_location, places)
-        
-        # Tìm max distance để normalize (nếu chưa có)
-        if max_distance is None:
-            max_distance = max(max(row) for row in distance_matrix)
-        
-        # Tính radius (khoảng cách xa nhất từ user)
-        max_radius = max(distance_matrix[0][1:])
-        
-        # 🔧 TÍNH TRƯỚC: Category analysis và meal logic (để tránh NameError khi dùng sau)
-        # Lấy danh sách tất cả category có trong places (GIỮ THỨ TỰ xuất hiện)
-        all_categories = list(dict.fromkeys(place.get('category') for place in places if 'category' in place))
-        has_cafe = "Cafe & Bakery" in all_categories
-        has_restaurant = "Restaurant" in all_categories
-        
-        # Xác định có cần chèn Restaurant cho meal time không
-        should_insert_restaurant_for_meal = False
-        meal_windows = None
-        
-        if not has_cafe and has_restaurant:
-            # Không có Cafe nhưng có Restaurant → Chắc chắn do overlap meal time
-            if current_datetime and max_time_minutes:
-                meal_check = TimeUtils.check_overlap_with_meal_times(current_datetime, max_time_minutes)
-                if meal_check["needs_restaurant"]:
-                    should_insert_restaurant_for_meal = True
-                    meal_windows = {
-                        "lunch": meal_check.get("lunch_window"),
-                        "dinner": meal_check.get("dinner_window")
-                    }
-                    print(f"🍽️  Không có Cafe & Bakery nhưng có Restaurant → Chèn ĐÚNG 1 Restaurant vào meal time")
-        
-        # 2. Chọn điểm đầu tiên
-        route = []
-        visited = set()
-        current_pos = 0  # Bắt đầu từ user
-        total_travel_time = 0
-        total_stay_time = 0
-        
-        if first_place_idx is not None:
-            best_first = first_place_idx
-        else:
-            # Tính combined score cho tất cả địa điểm từ user
-            best_first = None
-            best_first_score = -1
-            
-            for i, place in enumerate(places):
-                # Nếu có current_datetime, kiểm tra opening_hours trước
-                if current_datetime:
-                    travel_time = self.calculate_travel_time(
-                        distance_matrix[0][i + 1],
-                        transportation_mode
-                    )
-                    arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
-                    
-                    # Bỏ qua POI nếu không đủ thời gian stay
-                    if not self.is_poi_available_at_time(place, arrival_time):
-                        continue
-                
-                # Loại bỏ Restaurant khỏi POI đầu nếu đang trong chế độ chèn cho meal
-                # (Không có Cafe & Bakery nhưng có Restaurant)
-                if should_insert_restaurant_for_meal and place.get('category') == 'Restaurant':
-                    continue
-                
-                combined = self.calculate_combined_score(
-                    place_idx=i,
-                    current_pos=0,
-                    places=places,
-                    distance_matrix=distance_matrix,
-                    max_distance=max_distance,
-                    is_first=True
-                )
-                if combined > best_first_score:
-                    best_first_score = combined
-                    best_first = i
-        
-        if best_first is None:
-            return None
-        
-        # Thêm điểm đầu tiên
-        route.append(best_first)
-        visited.add(best_first)
-        travel_time = self.calculate_travel_time(
-            distance_matrix[0][best_first + 1],
-            transportation_mode
-        )
-        stay_time = self.get_stay_time(places[best_first].get("poi_type", ""))
-        total_travel_time += travel_time
-        total_stay_time += stay_time
-        current_pos = best_first + 1
-        
-        # Tính bearing từ user đến POI đầu (để dùng cho POI thứ 2)
-        prev_bearing = self.calculate_bearing(
-            user_location[0], user_location[1],
-            places[best_first]["lat"], places[best_first]["lon"]
+        self.geo = GeographicUtils()
+        self.validator = POIValidator()
+        self.calculator = Calculator(self.geo)
+        self.greedy_builder = GreedyRouteBuilder(
+            geo=self.geo,
+            validator=self.validator,
+            calculator=self.calculator
         )
         
-        # 3. Chọn các điểm tiếp theo (trừ điểm cuối) - BẮT BUỘC XEN KẼ CATEGORY
-        # Track thứ tự category đã dùng
-        category_sequence = []
-        if 'category' in places[best_first]:
-            category_sequence.append(places[best_first].get('category'))
-        
-        # ⚠️ KIỂM TRA: Nếu POI đầu tiên là Restaurant và đang trong chế độ meal → Đánh dấu đã chèn
-        restaurant_inserted_for_meal = False
-        if should_insert_restaurant_for_meal and places[best_first].get('category') == 'Restaurant':
-            restaurant_inserted_for_meal = True
-            print(f"✅ POI đầu đã là Restaurant → Không chọn Restaurant nữa cho các POI sau")
-        
-        # target_places là số POI cần đi (không tính user)
-        # Đã có 1 POI đầu, cần chọn (target_places - 2) POI giữa, và 1 POI cuối
-        for step in range(target_places - 2):
-            best_next = None
-            best_next_score = -1
-            
-            # 🍽️ MEAL TIME PRIORITY: Kiểm tra xem có cần ưu tiên Restaurant không
-            # CHỈ ưu tiên nếu CHƯA chèn Restaurant cho meal
-            arrival_at_next = None
-            if current_datetime:
-                arrival_at_next = current_datetime + timedelta(minutes=total_travel_time + total_stay_time)
-            
-            should_prioritize_restaurant = False
-            if meal_windows and arrival_at_next and not restaurant_inserted_for_meal:
-                # Kiểm tra xem arrival time có nằm trong meal window không
-                for meal_type, window in meal_windows.items():
-                    if window:
-                        meal_start, meal_end = window
-                        # Nếu đến trong khoảng meal time, ưu tiên Restaurant
-                        if meal_start <= arrival_at_next <= meal_end:
-                            should_prioritize_restaurant = True
-                            print(f"🍽️  Ưu tiên Restaurant vì đến lúc {arrival_at_next.strftime('%H:%M')} (trong {meal_type} window)")
-                            break
-            
-            # Xác định category BẮT BUỘC cho POI tiếp theo
-            required_category = None
-            # Mặc định loại Restaurant nếu đang trong chế độ chèn cho meal
-            exclude_restaurant = should_insert_restaurant_for_meal
-            
-            # Nếu cần ưu tiên Restaurant (chưa chèn cho meal), bắt buộc chọn Restaurant
-            if should_prioritize_restaurant:
-                # Kiểm tra xem có Restaurant trong places không
-                has_restaurant_available = any(p.get('category') == 'Restaurant' and i not in visited for i, p in enumerate(places))
-                if has_restaurant_available:
-                    required_category = 'Restaurant'
-                    restaurant_inserted_for_meal = True  # Đánh dấu đã chèn Restaurant
-                    exclude_restaurant = False  # Cho phép chọn Restaurant cho bước này
-                    print(f"   → BẮT BUỘC chọn Restaurant cho bước này (chỉ 1 lần)")
-            # Nếu đã chèn Restaurant cho meal rồi, tiếp tục loại bỏ Restaurant
-            elif should_insert_restaurant_for_meal and restaurant_inserted_for_meal:
-                exclude_restaurant = True
-                print(f"   → Đã chèn Restaurant cho meal, chỉ chọn từ category ban đầu")
-            
-            # Nếu không ưu tiên Restaurant, áp dụng logic xen kẽ category bình thường
-            if required_category is None and category_sequence and all_categories:
-                # Lấy category của POI vừa thêm
-                last_category = category_sequence[-1]
-                # Tìm index của category hiện tại trong danh sách
-                try:
-                    current_idx = all_categories.index(last_category)
-                    # Chọn category tiếp theo (tuần hoàn)
-                    next_idx = (current_idx + 1) % len(all_categories)
-                    required_category = all_categories[next_idx]
-                except ValueError:
-                    # Nếu không tìm thấy, lấy category đầu tiên
-                    required_category = all_categories[0] if all_categories else None
-            
-            # Lần 1: Tìm POI với category BẮT BUỘC
-            candidates_with_required_category = []
-            # Lấy POI vừa thêm để so sánh 3 level
-            last_added_place = places[route[-1]] if route else None
-            
-            for i, place in enumerate(places):
-                if i in visited:
-                    continue
-                
-                # Loại bỏ Restaurant nếu đã chèn cho meal
-                if exclude_restaurant and place.get('category') == 'Restaurant':
-                    continue
-                
-                # Chỉ xét POI có đúng category yêu cầu
-                if required_category and place.get('category') != required_category:
-                    continue
-                
-                # Kiểm tra 3 level nếu cả 2 POI đều là food category
-                if last_added_place and self.is_same_food_type(last_added_place, place):
-                    continue  # Bỏ qua POI này vì giống hệt 3 level với POI trước
-                
-                # Nếu có current_datetime, kiểm tra opening_hours
-                if current_datetime:
-                    travel_time_to_poi = self.calculate_travel_time(
-                        distance_matrix[current_pos][i + 1],
-                        transportation_mode
-                    )
-                    arrival_time = current_datetime + timedelta(minutes=total_travel_time + total_stay_time + travel_time_to_poi)
-                    
-                    # Bỏ qua POI nếu không đủ thời gian stay
-                    if not self.is_poi_available_at_time(place, arrival_time):
-                        continue
-                
-                combined = self.calculate_combined_score(
-                    place_idx=i,
-                    current_pos=current_pos,
-                    places=places,
-                    distance_matrix=distance_matrix,
-                    max_distance=max_distance,
-                    prev_bearing=prev_bearing,
-                    user_location=user_location
-                )
-                
-                # Kiểm tra thời gian khả thi
-                temp_travel = total_travel_time + self.calculate_travel_time(
-                    distance_matrix[current_pos][i + 1],
-                    transportation_mode
-                )
-                temp_stay = total_stay_time + self.get_stay_time(places[i].get("poi_type", ""))
-                estimated_return = self.calculate_travel_time(
-                    distance_matrix[i + 1][0],
-                    transportation_mode
-                )
-                
-                if temp_travel + temp_stay + estimated_return > max_time_minutes:
-                    continue
-                
-                candidates_with_required_category.append((i, combined))
-            
-            # Chọn POI tốt nhất trong category yêu cầu
-            if candidates_with_required_category:
-                candidates_with_required_category.sort(key=lambda x: x[1], reverse=True)
-                best_next = candidates_with_required_category[0][0]
-                best_next_score = candidates_with_required_category[0][1]
-            
-            # Lần 2: Nếu không tìm thấy POI với category yêu cầu, xét tất cả POI còn lại
-            if best_next is None:
-                for i, place in enumerate(places):
-                    if i in visited:
-                        continue
-                    
-                    # Loại bỏ Restaurant nếu đã chèn cho meal
-                    if exclude_restaurant and place.get('category') == 'Restaurant':
-                        continue
-                    
-                    # Kiểm tra 3 level nếu cả 2 POI đều là food category
-                    if last_added_place and self.is_same_food_type(last_added_place, place):
-                        continue  # Bỏ qua POI này vì giống hệt 3 level với POI trước
-                    
-                    # Nếu có current_datetime, kiểm tra opening_hours
-                    if current_datetime:
-                        travel_time_to_poi = self.calculate_travel_time(
-                            distance_matrix[current_pos][i + 1],
-                            transportation_mode
-                        )
-                        arrival_time = current_datetime + timedelta(minutes=total_travel_time + total_stay_time + travel_time_to_poi)
-                        
-                        # Bỏ qua POI nếu không đủ thời gian stay
-                        if not self.is_poi_available_at_time(place, arrival_time):
-                            continue
-                    
-                    combined = self.calculate_combined_score(
-                        place_idx=i,
-                        current_pos=current_pos,
-                        places=places,
-                        distance_matrix=distance_matrix,
-                        max_distance=max_distance,
-                        prev_bearing=prev_bearing,
-                        user_location=user_location
-                    )
-                    
-                    # Kiểm tra thời gian khả thi
-                    temp_travel = total_travel_time + self.calculate_travel_time(
-                        distance_matrix[current_pos][i + 1],
-                        transportation_mode
-                    )
-                    temp_stay = total_stay_time + self.get_stay_time(places[i].get("poi_type", ""))
-                    estimated_return = self.calculate_travel_time(
-                        distance_matrix[i + 1][0],
-                        transportation_mode
-                    )
-                    
-                    if temp_travel + temp_stay + estimated_return > max_time_minutes:
-                        continue
-                    
-                    if combined > best_next_score:
-                        best_next_score = combined
-                        best_next = i
-            
-            if best_next is None:
-                break
-            
-            # Thêm điểm tiếp theo
-            route.append(best_next)
-            visited.add(best_next)
-            if 'category' in places[best_next]:
-                category_sequence.append(places[best_next].get('category'))
-            
-            travel_time = self.calculate_travel_time(
-                distance_matrix[current_pos][best_next + 1],
-                transportation_mode
-            )
-            stay_time = self.get_stay_time(places[best_next].get("poi_type", ""))
-            total_travel_time += travel_time
-            total_stay_time += stay_time
-            
-            # Cập nhật bearing cho bước tiếp theo
-            prev_place = places[route[-2]] if len(route) >= 2 else None
-            current_place = places[best_next]
-            if prev_place:
-                prev_bearing = self.calculate_bearing(
-                    prev_place["lat"], prev_place["lon"],
-                    current_place["lat"], current_place["lon"]
-                )
-            else:
-                # Nếu chỉ có 1 POI trước đó, tính từ user
-                prev_bearing = self.calculate_bearing(
-                    user_location[0], user_location[1],
-                    current_place["lat"], current_place["lon"]
-                )
-            
-            current_pos = best_next + 1
-        
-        # 4. Chọn điểm cuối (gần user) - với tăng dần bán kính nếu không tìm thấy
-        best_last = None
-        best_last_score = -1
-        
-        # Thử các mức bán kính: 30%, 50%, 70%, 90%, 110%, 130%
-        radius_thresholds = [0.2, 0.4, 0.6, 0.8, 1.0]
-        
-        for threshold_multiplier in radius_thresholds:
-            current_threshold = threshold_multiplier * max_radius
-            
-            for i, place in enumerate(places):
-                if i in visited:
-                    continue
-                
-                # 🍽️ Logic lọc Restaurant cho POI cuối
-                if should_insert_restaurant_for_meal and place.get('category') == 'Restaurant':
-                    # Nếu đã chèn Restaurant rồi → Loại bỏ
-                    if restaurant_inserted_for_meal:
-                        continue
-                    
-                    # Nếu chưa chèn Restaurant → Chỉ cho phép nếu arrival time nằm trong meal window
-                    if current_datetime and meal_windows:
-                        travel_time_to_last = self.calculate_travel_time(
-                            distance_matrix[current_pos][i + 1],
-                            transportation_mode
-                        )
-                        arrival_at_last = current_datetime + timedelta(minutes=total_travel_time + total_stay_time + travel_time_to_last)
-                        
-                        # Kiểm tra xem có nằm trong meal window không
-                        in_meal_window = False
-                        for meal_type, window in meal_windows.items():
-                            if window:
-                                meal_start, meal_end = window
-                                if meal_start <= arrival_at_last <= meal_end:
-                                    in_meal_window = True
-                                    break
-                        
-                        # Nếu KHÔNG nằm trong meal window → Loại bỏ Restaurant
-                        if not in_meal_window:
-                            continue
-                
-                # Kiểm tra khoảng cách đến user
-                dist_to_user = distance_matrix[i + 1][0]
-                if dist_to_user > current_threshold:
-                    continue
-                
-                # Nếu có current_datetime, kiểm tra opening_hours
-                if current_datetime:
-                    travel_time_to_poi = self.calculate_travel_time(
-                        distance_matrix[current_pos][i + 1],
-                        transportation_mode
-                    )
-                    arrival_time = current_datetime + timedelta(minutes=total_travel_time + total_stay_time + travel_time_to_poi)
-                    
-                    # Bỏ qua POI nếu không đủ thời gian stay
-                    if not self.is_poi_available_at_time(place, arrival_time):
-                        continue
-                
-                # Kiểm tra thời gian
-                temp_travel = total_travel_time + self.calculate_travel_time(
-                    distance_matrix[current_pos][i + 1],
-                    transportation_mode
-                )
-                temp_stay = total_stay_time + self.get_stay_time(places[i].get("poi_type", ""))
-                return_time = self.calculate_travel_time(dist_to_user, transportation_mode)
-                
-                if temp_travel + temp_stay + return_time > max_time_minutes:
-                    continue
-                
-                # POI cuối: ưu tiên gần user
-                combined = self.calculate_combined_score(
-                    place_idx=i,
-                    current_pos=current_pos,
-                    places=places,
-                    distance_matrix=distance_matrix,
-                    max_distance=max_distance,
-                    is_last=True
-                )
-                
-                if combined > best_last_score:
-                    best_last_score = combined
-                    best_last = i
-            
-            # Nếu tìm được POI cuối, dừng lại
-            if best_last is not None:
-                print(f"🎯 Tìm được POI cuối ở mức {threshold_multiplier*100:.0f}% bán kính ({current_threshold:.0f}km)")
-                break
-    
-        # Thêm POI cuối
-        if best_last is not None:
-            route.append(best_last)
-            visited.add(best_last)
-            travel_time = self.calculate_travel_time(
-                distance_matrix[current_pos][best_last + 1],
-                transportation_mode
-            )
-            stay_time = self.get_stay_time(places[best_last].get("poi_type", ""))
-            total_travel_time += travel_time
-            total_stay_time += stay_time
-            current_pos = best_last + 1
-        
-        # 5. Thêm thời gian quay về user
-        return_time = self.calculate_travel_time(
-            distance_matrix[current_pos][0],
-            transportation_mode
-        )
-        total_travel_time += return_time
-        
-        total_time = total_travel_time + total_stay_time
-        
-        if total_time > max_time_minutes:
-            return None
-        
-        # 6. Format kết quả
-        route_places = []
-        prev_pos = 0
-        
-        for i, place_idx in enumerate(route):
-            place = places[place_idx]
-            travel_time = self.calculate_travel_time(
-                distance_matrix[prev_pos][place_idx + 1],
-                transportation_mode
-            )
-            stay_time = self.get_stay_time(place.get("poi_type", ""))
-            
-            # Tính combined score cho POI này
-            is_first_poi = (i == 0)
-            is_last_poi = (i == len(route) - 1)
-            combined_score = self.calculate_combined_score(
-                place_idx=place_idx,
-                current_pos=prev_pos,
-                places=places,
-                distance_matrix=distance_matrix,
-                max_distance=max_distance,
-                is_first=is_first_poi,
-                is_last=is_last_poi
-            )
-            
-            route_places.append({
-                "place_id": place["id"],
-                "place_name": place["name"],
-                "poi_type": place.get("poi_type", ""),
-                "poi_type_clean": place.get("poi_type_clean", ""),
-                "main_subcategory": place.get("main_subcategory", ""),
-                "specialization": place.get("specialization", ""),
-                "address": place.get("address", ""),
-                "lat": place["lat"],
-                "lon": place["lon"],
-                "similarity": round(place["score"], 3),
-                "rating": round(float(place.get("rating") or 0.5), 3),
-                "combined_score": round(combined_score, 3),
-                "travel_time_minutes": round(travel_time, 1),
-                "stay_time_minutes": stay_time,
-                "open_hours": place.get("open_hours", [])
-            })
-            
-            prev_pos = place_idx + 1
-        
-        # Tính tổng score
-        total_score = sum(places[idx]["score"] for idx in route)
-        
-        return {
-            "route": route,  # Danh sách index (dùng nội bộ)
-            "total_time_minutes": round(total_time, 1),
-            "travel_time_minutes": round(total_travel_time, 1),
-            "stay_time_minutes": round(total_stay_time, 1),
-            "total_score": round(total_score, 2),
-            "avg_score": round(total_score / len(route), 2),
-            "efficiency": round(total_score / total_time * 100, 2),
-            "places": route_places
-        }
-    
+      
     def build_routes(
         self,
         user_location: Tuple[float, float],
@@ -887,7 +74,7 @@ class RouteBuilder:
             target_places = len(places)
         
         # Xây dựng distance matrix 1 lần
-        distance_matrix = self.build_distance_matrix(user_location, places)
+        distance_matrix = self.geo.build_distance_matrix(user_location, places)
         max_distance = max(max(row) for row in distance_matrix)
         
         # Kiểm tra categories có trong places (GIỮ THỨ TỰ xuất hiện)
@@ -903,21 +90,21 @@ class RouteBuilder:
         for i, place in enumerate(places):
             # Nếu có current_datetime, kiểm tra opening_hours trước
             if current_datetime:
-                travel_time = self.calculate_travel_time(
+                travel_time = self.calculator.calculate_travel_time(
                     distance_matrix[0][i + 1],
                     transportation_mode
                 )
                 arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
                 
                 # Bỏ qua POI nếu không đủ thời gian stay
-                if not self.is_poi_available_at_time(place, arrival_time):
+                if not self.validator.is_poi_available_at_time(place, arrival_time):
                     continue
             
             # Loại bỏ Restaurant nếu đang trong chế độ chèn cho meal (Restaurant sẽ chỉ được chèn vào meal time)
             if should_insert_restaurant_for_meal and place.get('category') == 'Restaurant':
                 continue
             
-            combined = self.calculate_combined_score(
+            combined = self.calculator.calculate_combined_score(
                 place_idx=i,
                 current_pos=0,
                 places=places,
@@ -943,7 +130,7 @@ class RouteBuilder:
                 # Tính thời gian đến POI đầu tiên (candidate có score cao nhất)
                 if first_candidates:
                     first_idx = first_candidates[0][0]
-                    travel_time = self.calculate_travel_time(
+                    travel_time = self.calculator.calculate_travel_time(
                         distance_matrix[0][first_idx + 1],
                         transportation_mode
                     )
@@ -971,17 +158,17 @@ class RouteBuilder:
                 
                 # Kiểm tra opening hours
                 if current_datetime:
-                    travel_time = self.calculate_travel_time(
+                    travel_time = self.calculator.calculate_travel_time(
                         distance_matrix[0][i + 1],
                         transportation_mode
                     )
                     arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
                     
-                    if not self.is_poi_available_at_time(place, arrival_time):
+                    if not self.validator.is_poi_available_at_time(place, arrival_time):
                         continue
                 
                 # Tính combined score
-                combined = self.calculate_combined_score(
+                combined = self.calculator.calculate_combined_score(
                     place_idx=i,
                     current_pos=0,
                     places=places,
@@ -1005,7 +192,7 @@ class RouteBuilder:
             print(f"🎯 Điểm đầu tiên BẮT BUỘC (score cao nhất): {places[best_first_place]['name']} (score={places[best_first_place]['score']:.3f})")
         
         # Xây dựng route đầu tiên từ điểm có score cao nhất
-        route_1 = self.build_single_route_greedy(
+        route_1 = self.greedy_builder.build_single_route_greedy(
             user_location=user_location,
             places=places,
             transportation_mode=transportation_mode,
@@ -1033,7 +220,7 @@ class RouteBuilder:
                 if len(all_routes) >= max_routes:
                     break
                 
-                route_result = self.build_single_route_greedy(
+                route_result = self.greedy_builder.build_single_route_greedy(
                     user_location=user_location,
                     places=places,
                     transportation_mode=transportation_mode,

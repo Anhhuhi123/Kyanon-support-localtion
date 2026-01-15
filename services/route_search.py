@@ -9,6 +9,7 @@ from concurrent.futures import ProcessPoolExecutor
 import asyncpg
 import redis.asyncio as aioredis
 from services.combined_search import CombinedSearchService
+from services.cache_search import CacheSearchService
 from radius_logic.route import RouteBuilder
 from uuid import UUID
 
@@ -30,6 +31,7 @@ class RouteSearchService(CombinedSearchService):
         super().__init__(db_pool, redis_client, vector_store, embedder)
         self.process_pool = process_pool
         self.route_builder = RouteBuilder()
+        self.cache_service = CacheSearchService(redis_client)
     
     async def build_routes(
         self,
@@ -126,6 +128,14 @@ class RouteSearchService(CombinedSearchService):
             print(f"⏱️  Route building: {route_time:.3f}s")
             print(f"⏱️  Total execution time: {total_time:.3f}s")
             print(f"✅ Generated {len(routes)} route(s)")
+            
+            # 🔥 Cache route metadata to Redis using CacheSearchService
+            if self.cache_service and user_id and routes:
+                await self.cache_service.cache_route_metadata(
+                    user_id=user_id,
+                    routes=routes,
+                    semantic_places=semantic_places
+                )
             
             # Lấy timing detail từ search result
             search_timing = search_result.get("timing_detail", {})
