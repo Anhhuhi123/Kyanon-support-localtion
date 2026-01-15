@@ -4,7 +4,7 @@ Route Builder Module
 from .route_config import RouteConfig
 from .geographic_utils import GeographicUtils
 from .poi_validator import POIValidator
-from .score_calculator import ScoreCalculator
+from .calculator import Calculator
 
 # Import RouteBuilder from parent module (route.py)
 # Use importlib to avoid circular import issues
@@ -27,6 +27,6 @@ __all__ = [
     'RouteConfig',
     'GeographicUtils',
     'POIValidator',
-    'ScoreCalculator',
+    'Calculator',
     'RouteBuilder'
 ]

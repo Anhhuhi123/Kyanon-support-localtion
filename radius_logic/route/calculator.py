@@ -6,10 +6,36 @@ from typing import List, Dict, Any, Tuple, Optional
 from .route_config import RouteConfig
 from .geographic_utils import GeographicUtils
 
-class ScoreCalculator:
+class Calculator:
 
     def __init__(self, geographic_utils: GeographicUtils):
         self.geo = geographic_utils
+
+    def calculate_travel_time(self, distance_km: float, transportation_mode: str) -> float:
+        """
+        Tính thời gian di chuyển (phút)
+        
+        Args:
+            distance_km: Khoảng cách (km)
+            transportation_mode: Phương tiện
+            
+        Returns:
+            Thời gian (phút)
+        """
+        speed = RouteConfig.TRANSPORTATION_SPEEDS.get(transportation_mode.upper(), 30)
+        return (distance_km / speed) * 60  # Chuyển giờ sang phút
+    
+    def get_stay_time(self, poi_type: str) -> int:
+        """
+        Lấy thời gian tham quan cố định (phút)
+        
+        Args:
+            poi_type: Loại POI (không sử dụng)
+            
+        Returns:
+            Thời gian tham quan cố định 30 phút
+        """
+        return RouteConfig.DEFAULT_STAY_TIME
 
     def calculate_combined_score(
         self,
