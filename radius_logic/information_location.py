@@ -123,7 +123,8 @@ class LocationInfoService:
                         lon,
                         address,
                         poi_type,
-                        normalize_stars_reviews
+                        normalize_stars_reviews,
+                        open_hours
                     FROM public."PoiClean"
                     WHERE id = $1
                 """
@@ -133,6 +134,7 @@ class LocationInfoService:
                 if not row:
                     return None
                 
+                from utils.time_utils import TimeUtils
                 result = {
                     "id": str(row['id']),  # Convert UUID to string
                     "name": row['name'],
@@ -140,7 +142,8 @@ class LocationInfoService:
                     "lon": row['lon'],
                     "address": row['address'],
                     "poi_type": row['poi_type'],
-                    "rating": row['normalize_stars_reviews']
+                    "rating": row['normalize_stars_reviews'],
+                    "open_hours": TimeUtils.normalize_open_hours(row['open_hours'])
                 }
                 
                 # Lưu vào cache
@@ -199,7 +202,8 @@ class LocationInfoService:
                         poi_type_clean,
                         main_subcategory,
                         specialization,
-                        normalize_stars_reviews
+                        normalize_stars_reviews,
+                        open_hours
                     FROM public."PoiClean"
                     WHERE id = ANY($1::uuid[])
                 """
@@ -207,6 +211,7 @@ class LocationInfoService:
                 rows = await conn.fetch(query, missing_ids)
                 
                 # Bước 4: Parse kết quả từ DB
+                from utils.time_utils import TimeUtils
                 db_results = {}
                 for row in rows:
                     location_id = str(row['id'])  # Convert UUID to string
@@ -220,7 +225,8 @@ class LocationInfoService:
                         "poi_type_clean": row['poi_type_clean'],
                         "main_subcategory": row['main_subcategory'],
                         "specialization": row['specialization'],
-                        "rating": row['normalize_stars_reviews']
+                        "rating": row['normalize_stars_reviews'],
+                        "open_hours": TimeUtils.normalize_open_hours(row['open_hours'])
                     }
                 
                 # Bước 5: Cache kết quả mới (batch set async)

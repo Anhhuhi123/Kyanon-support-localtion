@@ -7,7 +7,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 from fastapi import APIRouter, HTTPException
 from services.route_service import SemanticSearchService
-from pydantics.route import SemanticSearchRequest, CombinedSearchRequest, RouteSearchRequest
+from pydantics.route import SemanticSearchRequest, CombinedSearchRequest, RouteSearchRequest, UpdatePOIRequest
 
 # Initialize router
 router = APIRouter(prefix="/api/v1/route", tags=["Route Search (Qdrant)"])
@@ -157,6 +157,66 @@ async def route_search(request: RouteSearchRequest):
             max_routes=request.max_routes,
             top_k_semantic=request.top_k_semantic,
             customer_like=request.customer_like or False,
+            current_datetime=request.current_time
+        )
+        
+        if result["status"] == "error":
+            raise HTTPException(status_code=400, detail=result.get("error", "Unknown error"))
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/update-poi")
+async def update_poi(request: UpdatePOIRequest):
+    """
+    Update POI trong route đã có bằng POI khác cùng category
+    
+    Workflow:
+    1. Lấy route metadata từ Redis cache
+    2. Xác định category của POI cần thay thế
+    3. Tìm POI khác cùng category từ danh sách available POIs
+    4. Validate opening hours nếu có current_time
+    5. Thay thế POI và update cache
+    
+    Args:
+        user_id: UUID của user
+        route_id: ID của route (vd: "route_0", "route_1")
+        poi_id_to_replace: ID của POI cần thay thế
+        current_time: Thời điểm hiện tại (optional, để validate mở cửa)
+    
+    Returns:
+        JSON response với POI mới và thông tin route đã update
+        
+    Example Response:
+        {
+            "status": "success",
+            "message": "Successfully replaced POI xxx with yyy",
+            "old_poi_id": "xxx",
+            "new_poi": {
+                "id": "yyy",
+                "name": "New Place",
+                "category": "Restaurant",
+                ...
+            },
+            "category": "Restaurant",
+            "route_id": "route_0",
+            "updated_pois": [
+                {"poi_id": "aaa", "category": "Cafe & Bakery"},
+                {"poi_id": "yyy", "category": "Restaurant"},
+                ...
+            ]
+        }
+    """
+    try:
+        result = await get_semantic_service().update_poi_in_route(
+            user_id=request.user_id,
+            route_id=request.route_id,
+            poi_id_to_replace=request.poi_id_to_replace,
             current_datetime=request.current_time
         )
         

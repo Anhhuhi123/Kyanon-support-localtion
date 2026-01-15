@@ -2,17 +2,36 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
-import psycopg2
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantics.user import UserIdRequest 
 from services.poi_service import PoiService
 
 router = APIRouter(prefix="/api/v1/poi", tags=["Poi"])
 
+# Service instance sẽ được set từ server.py startup event
+poi_service: PoiService = None
+
 @router.post("/visited")
-def get_poi_visited(user_id: UserIdRequest):
-    poi_ids =  PoiService.get_visited_pois_by_user(user_id.user_id)
-    return PoiService.get_poi_by_ids(poi_ids)
+async def get_poi_visited(user_id: UserIdRequest):
+    """
+    Lấy danh sách POI đã visit của user (ASYNC)
+    
+    Args:
+        user_id: UUID của user
+        
+    Returns:
+        List POI đã visit
+    """
+    if poi_service is None:
+        raise HTTPException(status_code=500, detail="POI service not initialized")
+    
+    try:
+        poi_ids = await poi_service.get_visited_pois_by_user(user_id.user_id)
+        return await poi_service.get_poi_by_ids(poi_ids)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 # @router.post("/sync_pois")
 # def sync_pois(payload: PoiRequest) -> dict:
