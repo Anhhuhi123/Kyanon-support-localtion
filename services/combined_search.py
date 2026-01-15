@@ -28,6 +28,7 @@ class CombinedSearchService(SemanticSearchBase):
             embedder: Shared EmbeddingGenerator instance
         """
         super().__init__(db_pool, redis_client, vector_store, embedder)
+        self.poi_service = PoiService(db_pool, redis_client)
     
     async def search_combined(
         self,
@@ -241,8 +242,8 @@ class CombinedSearchService(SemanticSearchBase):
                     "results": []
                 }
             if user_id:
-                # get_visited_pois_by_user
-                visited_poi_ids = PoiService.get_visited_pois_by_user(user_id) or []
+                # get_visited_pois_by_user (ASYNC)
+                visited_poi_ids = await self.poi_service.get_visited_pois_by_user(user_id) or []
                 visited_set = {str(pid) for pid in visited_poi_ids}
                 id_list = [pid for pid in id_list if pid not in visited_set]
             
