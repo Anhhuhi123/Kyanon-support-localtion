@@ -96,11 +96,11 @@ async def startup_event():
     """
     print("Initializing services...")
     # # Import ở đây để đảm bảo chỉ init 1 lần
-    from services.semantic_search_service import SemanticSearchService
-    import routers.v1.semantic_api as semantic_api_module
+    # from services.semantic_search_service import SemanticSearchService
+    # import routers.v1.semantic_api as semantic_api_module
     
-    # Khởi tạo service (sẽ connect Qdrant và load model)
-    semantic_api_module._semantic_service_instance = SemanticSearchService()
+    # # Khởi tạo service (sẽ connect Qdrant và load model)
+    # semantic_api_module._semantic_service_instance = SemanticSearchService()
     print("Services initialized and ready!")
 
 # Include routers

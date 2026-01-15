@@ -12,4 +12,5 @@ class UuidRequest(BaseModel):
         default_factory=list,
         example=["0f9d2009-9436-46a4-b354-b0261898a39e"]
     )
+    
 
