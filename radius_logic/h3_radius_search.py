@@ -1,50 +1,41 @@
 """
-H3 + Redis Based Radius Search
+H3 + Redis Based Radius Search (Async Version)
 Tìm kiếm địa điểm sử dụng H3 hexagons và Redis cache để tối ưu performance
 """
 import h3
-import redis
 import json
-import psycopg2
 import math
-from typing import List, Dict, Any, Tuple, Set
+import asyncpg
+import redis.asyncio as aioredis
+from typing import List, Dict, Any, Tuple, Set, Optional
 from config.config import Config
+from utils.time_utils import TimeUtils
 
 class H3RadiusSearch:
     """
-    Tìm kiếm địa điểm sử dụng H3 hexagonal indexing và Redis cache
+    Tìm kiếm địa điểm sử dụng H3 hexagonal indexing và Redis cache (ASYNC)
     
     Workflow:
     1. Chuyển (lat, lon) thành H3 cell ở resolution từ Config
     2. Tìm k-ring (các cell lân cận) dựa trên transportation mode
-    3. Lấy POI từ Redis cache cho các cells
-    4. Nếu cache miss hoặc không đủ POI, query PostgreSQL và update cache
+    3. Lấy POI từ Redis cache cho các cells (async)
+    4. Nếu cache miss hoặc không đủ POI, query PostgreSQL (async) và update cache
     """
     
-    def __init__(self, db_connection_string: str, redis_host: str = None, redis_port: int = None):
+    def __init__(self, db_pool: Optional[asyncpg.Pool] = None, redis_client: Optional[aioredis.Redis] = None):
         """
-        Khởi tạo H3RadiusSearch với config từ Config class
+        Khởi tạo H3RadiusSearch với async db pool và redis client
         
         Args:
-            db_connection_string: PostgreSQL connection string
-            redis_host: Redis host (None = dùng từ Config)
-            redis_port: Redis port (None = dùng từ Config)
+            db_pool: Async PostgreSQL connection pool
+            redis_client: Async Redis client
         """
-        self.db_connection_string = db_connection_string
+        self.db_pool = db_pool
+        self.redis_client = redis_client
         
         # Lấy config từ Config class
         self.h3_resolution = Config.H3_RESOLUTION
         self.cache_ttl = Config.REDIS_CACHE_TTL
-        
-        # Redis connection
-        host = redis_host or Config.REDIS_HOST
-        port = redis_port or Config.REDIS_PORT
-        self.redis_client = redis.Redis(
-            host=host, 
-            port=port, 
-            db=Config.REDIS_DB,
-            decode_responses=True
-        )
         
     def calculate_distance_haversine(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
         """
@@ -135,9 +126,9 @@ class H3RadiusSearch:
         """
         return f"poi:h3:res{self.h3_resolution}:{h3_index}"
     
-    def get_pois_from_cache(self, h3_indices: Set[str]) -> Dict[str, List[Dict[str, Any]]]:
+    async def get_pois_from_cache(self, h3_indices: Set[str]) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Lấy POI từ Redis cache cho nhiều H3 cells
+        Lấy POI từ Redis cache cho nhiều H3 cells (ASYNC)
         
         Args:
             h3_indices: Set các H3 cell indices
@@ -147,9 +138,13 @@ class H3RadiusSearch:
         """
         result = {}
         
+        if not self.redis_client:
+            # Fallback: no cache available
+            return {idx: None for idx in h3_indices}
+        
         for h3_index in h3_indices:
             key = self.get_redis_key(h3_index)
-            cached = self.redis_client.get(key)
+            cached = await self.redis_client.get(key)
             
             if cached is not None:  # Cache hit (kể cả "[]")
                 result[h3_index] = json.loads(cached)
@@ -158,9 +153,9 @@ class H3RadiusSearch:
         
         return result
     
-    def query_pois_for_h3_cells(self, h3_indices: Set[str]) -> Dict[str, List[Dict[str, Any]]]:
+    async def query_pois_for_h3_cells(self, h3_indices: Set[str]) -> Dict[str, List[Dict[str, Any]]]:
         """
-        Query POI từ PostgreSQL cho các H3 cells và cache vào Redis
+        Query POI từ PostgreSQL cho các H3 cells và cache vào Redis (ASYNC)
         ✅ FIX BUG: Mỗi POI chỉ thuộc 1 H3 cell duy nhất (dựa vào geo_to_h3)
         
         Args:
@@ -169,113 +164,113 @@ class H3RadiusSearch:
         Returns:
             Dict mapping h3_index -> list of POIs
         """
-        if not h3_indices:
+        if not h3_indices or not self.db_pool:
             return {}
         
-        conn = psycopg2.connect(self.db_connection_string)
-        cursor = conn.cursor()
-        
-        try:
-            # Tìm bbox toàn cục từ TẤT CẢ centers của k-ring cells
-            all_centers = []
-            for h3_index in h3_indices:
-                center_lat, center_lon = h3.h3_to_geo(h3_index)
-                all_centers.append((center_lat, center_lon))
-            
-            # ✅ FIX: Tính margin dựa trên kích thước 1 H3 cell (không cần ước lượng k)
-            # Vì bbox đã được xây từ min/max của TẤT CẢ centers, margin chỉ cần bù kích thước 1 cell
-            edge_km = h3.edge_length(self.h3_resolution, unit='km')
-            # Margin = edge_length * 1.05 (5% safety) / 111km (1 degree)
-            margin_deg = (edge_km * 1.05) / 111.0
-            
-            min_lat = min(c[0] for c in all_centers) - margin_deg
-            max_lat = max(c[0] for c in all_centers) + margin_deg
-            min_lon = min(c[1] for c in all_centers) - margin_deg
-            max_lon = max(c[1] for c in all_centers) + margin_deg
-            
-            # Single batch query for all POIs in global bbox
-            query = """
-                SELECT 
-                    id,
-                    name,
-                    poi_type,
-                    address,
-                    lat,
-                    lon,
-                    COALESCE(normalize_stars_reviews, 0.5) AS rating,
-                    open_hours,
-                    poi_type_clean,
-                    main_subcategory,
-                    specialization
-                FROM public."PoiClean"
-                WHERE lat BETWEEN %s AND %s
-                  AND lon BETWEEN %s AND %s
-            """
-            
-            bbox_size_lat = max_lat - min_lat
-            bbox_size_lon = max_lon - min_lon
-            print(f"  📊 Batch query for {len(h3_indices)} cells (bbox: {bbox_size_lat:.4f}° × {bbox_size_lon:.4f}°, ~{bbox_size_lat*111:.1f}km × {bbox_size_lon*111:.1f}km)")
-            cursor.execute(query, [min_lat, max_lat, min_lon, max_lon])
-            rows = cursor.fetchall()
-            print(f"  ✓ Found {len(rows)} total POIs in global bbox")
-            
-            # ✅ FIX: Phân phối POI vào ĐÚNG H3 cell của nó
-            result = {h3_idx: [] for h3_idx in h3_indices}
-            distributed_count = 0
-            
-            for row in rows:
-                poi = {
-                    "id": row[0],
-                    "name": row[1],
-                    "poi_type": row[2],
-                    "poi_type_clean": row[8],
-                    "main_subcategory": row[9],
-                    "specialization": row[10],
-                    "address": row[3],
-                    "lat": row[4],
-                    "lon": row[5],
-                    "rating": round(float(row[6] or 0.5), 3),
-                    "open_hours": row[7] if row[7] else []
-                }
+        async with self.db_pool.acquire() as conn:
+            try:
+                # Tìm bbox toàn cục từ TẤT CẢ centers của k-ring cells
+                all_centers = []
+                for h3_index in h3_indices:
+                    center_lat, center_lon = h3.h3_to_geo(h3_index)
+                    all_centers.append((center_lat, center_lon))
                 
-                # Tính H3 cell mà POI này thuộc về
-                poi_h3 = h3.geo_to_h3(poi["lat"], poi["lon"], self.h3_resolution)
+                # ✅ FIX: Tính margin dựa trên kích thước 1 H3 cell (không cần ước lượng k)
+                # Vì bbox đã được xây từ min/max của TẤT CẢ centers, margin chỉ cần bù kích thước 1 cell
+                edge_km = h3.edge_length(self.h3_resolution, unit='km')
+                # Margin = edge_length * 1.05 (5% safety) / 111km (1 degree)
+                margin_deg = (edge_km * 1.05) / 111.0
                 
-                # Chỉ thêm vào cell của POI NẾU cell đó nằm trong tập cần query
-                if poi_h3 in result:
-                    result[poi_h3].append(poi)
-                    distributed_count += 1
-            
-            # Cache ALL cells (cả cells rỗng) để tránh query lại
-            cached_count = 0
-            cells_with_pois = 0
-            
-            for h3_index, pois in result.items():
-                if pois:
-                    cells_with_pois += 1
+                min_lat = min(c[0] for c in all_centers) - margin_deg
+                max_lat = max(c[0] for c in all_centers) + margin_deg
+                min_lon = min(c[1] for c in all_centers) - margin_deg
+                max_lon = max(c[1] for c in all_centers) + margin_deg
+                
+                # Single batch query for all POIs in global bbox
+                query = """
+                    SELECT 
+                        id,
+                        name,
+                        poi_type,
+                        address,
+                        lat,
+                        lon,
+                        COALESCE(normalize_stars_reviews, 0.5) AS rating,
+                        open_hours,
+                        poi_type_clean,
+                        main_subcategory,
+                        specialization
+                    FROM public."PoiClean"
+                    WHERE lat BETWEEN $1 AND $2
+                      AND lon BETWEEN $3 AND $4
+                """
+                
+                bbox_size_lat = max_lat - min_lat
+                bbox_size_lon = max_lon - min_lon
+                print(f"  📊 Batch query for {len(h3_indices)} cells (bbox: {bbox_size_lat:.4f}° × {bbox_size_lon:.4f}°, ~{bbox_size_lat*111:.1f}km × {bbox_size_lon*111:.1f}km)")
+                
+                rows = await conn.fetch(query, min_lat, max_lat, min_lon, max_lon)
+                print(f"  ✓ Found {len(rows)} total POIs in global bbox")
+                
+                # ✅ FIX: Phân phối POI vào ĐÚNG H3 cell của nó
+                result = {h3_idx: [] for h3_idx in h3_indices}
+                distributed_count = 0
+                
+                for row in rows:
                     
-                # Cache TẤT CẢ cells (kể cả rỗng) để lần sau không query lại
-                key = self.get_redis_key(h3_index)
-                self.redis_client.setex(key, self.cache_ttl, json.dumps(pois))
-                cached_count += 1
-            
-            print(f"  📊 Distribution: {cells_with_pois}/{len(h3_indices)} cells have POIs, total {distributed_count} POIs")
-            print(f"  💾 Cached {cached_count} cells with POIs")
-            
-            return result
-            
-        finally:
-            cursor.close()
-            conn.close()
+                    poi = {
+                        "id": str(row['id']),  # Convert UUID to string for JSON serialization
+                        "name": row['name'],
+                        "poi_type": row['poi_type'],
+                        "poi_type_clean": row['poi_type_clean'],
+                        "main_subcategory": row['main_subcategory'],
+                        "specialization": row['specialization'],
+                        "address": row['address'],
+                        "lat": row['lat'],
+                        "lon": row['lon'],
+                        "rating": round(float(row['rating'] or 0.5), 3),
+                        "open_hours": TimeUtils.normalize_open_hours(row['open_hours'])
+                    }
+                    
+                    # Tính H3 cell mà POI này thuộc về
+                    poi_h3 = h3.geo_to_h3(poi["lat"], poi["lon"], self.h3_resolution)
+                    
+                    # Chỉ thêm vào cell của POI NẾU cell đó nằm trong tập cần query
+                    if poi_h3 in result:
+                        result[poi_h3].append(poi)
+                        distributed_count += 1
+                
+                # Cache ALL cells (cả cells rỗng) để tránh query lại
+                if self.redis_client:
+                    cached_count = 0
+                    cells_with_pois = 0
+                    
+                    for h3_index, pois in result.items():
+                        if pois:
+                            cells_with_pois += 1
+                            
+                        # Cache TẤT CẢ cells (kể cả rỗng) để lần sau không query lại
+                        key = self.get_redis_key(h3_index)
+                        await self.redis_client.setex(key, self.cache_ttl, json.dumps(pois))
+                        cached_count += 1
+                    
+                    print(f"  📊 Distribution: {cells_with_pois}/{len(h3_indices)} cells have POIs, total {distributed_count} POIs")
+                    print(f"  💾 Cached {cached_count} cells with POIs")
+                
+                return result
+                
+            except Exception as e:
+                print(f"❌ Error querying POIs: {e}")
+                raise
     
-    def search_locations(
+    async def search_locations(
         self,
         latitude: float,
         longitude: float,
         transportation_mode: str
     ) -> Tuple[List[Dict[str, Any]], int]:
         """
-        ✅ FIX BUG #3: Tìm kiếm địa điểm sử dụng H3 + Redis cache
+        ✅ FIX BUG #3: Tìm kiếm địa điểm sử dụng H3 + Redis cache (ASYNC)
         Search 1 lần với k-ring cố định theo mode, không loop radius
         
         Args:
@@ -302,18 +297,18 @@ class H3RadiusSearch:
         
         print(f"🔍 H3 Search: mode={transportation_mode}, k-ring={k}, cells={len(h3_indices)}, coverage_radius={coverage_radius:.0f}m")
         
-        # 5. Lấy POI từ cache
-        cached_pois = self.get_pois_from_cache(h3_indices)
+        # 5. Lấy POI từ cache (async)
+        cached_pois = await self.get_pois_from_cache(h3_indices)
         # Cache hit = value không None (kể cả [] rỗng)
         cache_hits = sum(1 for v in cached_pois.values() if v is not None)
         cache_misses = len(h3_indices) - cache_hits
         
         print(f"📦 Cache: {cache_hits} hits, {cache_misses} misses")
         
-        # 6. Query POI cho cache misses (cells với value = None)
+        # 6. Query POI cho cache misses (cells với value = None) (async)
         miss_indices = {idx for idx, pois in cached_pois.items() if pois is None}
         if miss_indices:
-            fresh_pois = self.query_pois_for_h3_cells(miss_indices)
+            fresh_pois = await self.query_pois_for_h3_cells(miss_indices)
             cached_pois.update(fresh_pois)
         
         # 7. Merge tất cả POI và tính khoảng cách

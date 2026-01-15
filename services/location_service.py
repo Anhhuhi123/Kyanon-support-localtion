@@ -1,7 +1,7 @@
 """
-Location Service
+Location Service (Async Version)
 Service layer xử lý logic nghiệp vụ cho tìm kiếm địa điểm theo tọa độ và phương tiện
-Sử dụng H3 + Redis cache để tối ưu performance
+Sử dụng H3 + Redis cache async để tối ưu performance
 """
 import time
 from datetime import datetime
@@ -10,26 +10,26 @@ from config.config import Config
 from typing import List, Dict, Any, Tuple
 from radius_logic.h3_radius_search import H3RadiusSearch
 from utils.time_utils import TimeUtils
+import asyncpg
+import redis.asyncio as aioredis
 
 
 class LocationService:
-    """Service xử lý logic tìm kiếm địa điểm với H3 + Redis cache"""
+    """Service xử lý logic tìm kiếm địa điểm với H3 + Redis cache (ASYNC)"""
     
-    def __init__(self, db_connection_string: str, redis_host: str = "localhost", redis_port: int = 6379):
+    def __init__(self, db_pool: asyncpg.Pool = None, redis_client: aioredis.Redis = None):
         """
-        Khởi tạo service với database và Redis connection
+        Khởi tạo service với async database pool và Redis client
         
         Args:
-            db_connection_string: PostgreSQL connection string
-            redis_host: Redis host
-            redis_port: Redis port
+            db_pool: Async PostgreSQL connection pool
+            redis_client: Async Redis client
         """
-        self.db_connection_string = db_connection_string
-        redis_host =  Config.REDIS_HOST
-        redis_port =  Config.REDIS_PORT
-        self.h3_search = H3RadiusSearch(db_connection_string, redis_host, redis_port)
+        self.db_pool = db_pool
+        self.redis_client = redis_client
+        self.h3_search = H3RadiusSearch(db_pool, redis_client)
     
-    def find_nearest_locations(
+    async def find_nearest_locations(
         self,
         latitude: float,
         longitude: float,
@@ -78,8 +78,8 @@ class LocationService:
             # Đo thời gian thực thi
             start_time = time.time()
             
-            # Gọi H3 + Redis search: trả về TẤT CẢ địa điểm trong bán kính (>= 50)
-            results, final_radius = self.h3_search.search_locations(
+            # Gọi H3 + Redis search (ASYNC): trả về TẤT CẢ địa điểm trong bán kính (>= 50)
+            results, final_radius = await self.h3_search.search_locations(
                 latitude=latitude,
                 longitude=longitude,
                 transportation_mode=transportation_mode
@@ -134,6 +134,9 @@ class LocationService:
             return response
             
         except Exception as e:
+            import traceback
+            print(f"❌ Error in find_nearest_locations: {str(e)}")
+            print(traceback.format_exc())
             return {
                 "status": "error",
                 "error": str(e),

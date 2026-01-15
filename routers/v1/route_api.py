@@ -6,22 +6,22 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 from fastapi import APIRouter, HTTPException
-from services.semantic_search_service import SemanticSearchService
-from pydantics.semantic import SemanticSearchRequest, CombinedSearchRequest, RouteSearchRequest
+from services.route_service import SemanticSearchService
+from pydantics.route import SemanticSearchRequest, CombinedSearchRequest, RouteSearchRequest
 
 # Initialize router
-router = APIRouter(prefix="/api/v1/semantic", tags=["Semantic Search (Qdrant)"])
+router = APIRouter(prefix="/api/v1/route", tags=["Route Search (Qdrant)"])
 # Service instance sẽ được set từ api_server.py startup event
-_semantic_service_instance = None
+_route_service_instance = None
 
 def get_semantic_service():
     """Lấy singleton instance của SemanticSearchService"""
-    global _semantic_service_instance
-    if _semantic_service_instance is None:
+    global _route_service_instance
+    if _route_service_instance is None:
         # Fallback: nếu chưa init từ startup, init ngay
-        from services.semantic_search_service import SemanticSearchService
-        _semantic_service_instance = SemanticSearchService()
-    return _semantic_service_instance
+        from services.route_service import SemanticSearchService
+        _route_service_instance = SemanticSearchService()
+    return _route_service_instance
 
 
 @router.post("/search")
@@ -37,7 +37,7 @@ async def semantic_search(request: SemanticSearchRequest):
         JSON response với danh sách địa điểm phù hợp nhất với query
     """
     try:
-        result = get_semantic_service().search_by_query(
+        result = await get_semantic_service().search_by_query(
             query=request.query,
             top_k=request.top_k
         )
@@ -74,7 +74,7 @@ async def combined_search(request: CombinedSearchRequest):
         JSON response CHỈ với top_k địa điểm có similarity cao nhất
     """
     try:
-        result = get_semantic_service().search_combined(
+        result = await get_semantic_service().search_combined(
             latitude=request.latitude,
             longitude=request.longitude,
             transportation_mode=request.transportation_mode,
@@ -146,7 +146,7 @@ async def route_search(request: RouteSearchRequest):
         }
     """
     try:
-        result = get_semantic_service().search_combined_with_routes(
+        result = await get_semantic_service().build_routes(
             latitude=request.latitude,
             longitude=request.longitude,
             transportation_mode=request.transportation_mode,

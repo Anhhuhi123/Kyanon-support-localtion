@@ -30,7 +30,7 @@ async def search_locations(request: LocationSearchRequest):
         JSON response với danh sách TẤT CẢ địa điểm trong bán kính
     """
     try:
-        result = location_service.find_nearest_locations(
+        result = await location_service.find_nearest_locations(
             latitude=request.latitude,
             longitude=request.longitude,
             transportation_mode=request.transportation_mode
