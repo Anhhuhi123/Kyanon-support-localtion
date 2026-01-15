@@ -76,12 +76,12 @@ class Config:
     @classmethod
     def get_db_connection_string(cls) -> str:
         """
-        Generate PostgreSQL connection string
+        Generate PostgreSQL connection string in URI format for asyncpg
         
         Returns:
-            Connection string format: "host=... port=... dbname=... user=... password=..."
+            Connection string format: "postgresql://user:password@host:port/dbname"
         """
-        return f"host={cls.DB_HOST} port={cls.DB_PORT} dbname={cls.DB_NAME} user={cls.DB_USER} password={cls.DB_PASSWORD}"
+        return f"postgresql://{cls.DB_USER}:{cls.DB_PASSWORD}@{cls.DB_HOST}:{cls.DB_PORT}/{cls.DB_NAME}"
     
     @classmethod
     def get_transportation_config(cls, mode: str) -> Dict[str, int]:

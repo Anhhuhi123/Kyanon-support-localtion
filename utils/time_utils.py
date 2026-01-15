@@ -52,6 +52,29 @@ class TimeUtils:
         return hour * 60 + minute
     
     @staticmethod
+    def normalize_open_hours(open_hours: Any) -> List[Dict[str, Any]]:
+        """
+        Normalize open_hours thành list format chuẩn
+        Parse JSON string nếu cần
+        
+        Args:
+            open_hours: Có thể là List[Dict], JSON string, hoặc None
+            
+        Returns:
+            List[Dict] format chuẩn, hoặc [] nếu không có data
+        """
+        # Nếu là string, parse JSON
+        if isinstance(open_hours, str):
+            import json
+            try:
+                open_hours = json.loads(open_hours)
+            except:
+                return []
+        
+        # Trả về list hoặc empty list
+        return open_hours if open_hours else []
+    
+    @staticmethod
     def minutes_to_time(minutes: int) -> str:
         """
         Chuyển số phút từ 00:00 thành string 'HH:MM'
@@ -249,13 +272,13 @@ class TimeUtils:
         Hỗ trợ khoảng mở qua đêm (ví dụ 22:00-02:00).
         
         Args:
-            open_hours: Danh sách giờ mở cửa
+            open_hours: Danh sách giờ mở cửa (hoặc JSON string)
             start_datetime: Thời điểm bắt đầu window
             end_datetime: Thời điểm kết thúc window
             
         Returns:
             True nếu có overlap (POI mở cửa trong ít nhất 1 phần của window)
-        """
+        """        
         if not open_hours:
             return True  # Không có thông tin → giả sử luôn mở
         
@@ -324,10 +347,15 @@ class TimeUtils:
         filtered_pois = []
         
         for poi in pois:
-            open_hours = poi.get('open_hours')
-            
-            if TimeUtils.overlaps_with_time_window(open_hours, start_datetime, end_datetime):
-                filtered_pois.append(poi)
+            try:
+                open_hours = poi.get('open_hours')
+                
+                if TimeUtils.overlaps_with_time_window(open_hours, start_datetime, end_datetime):
+                    filtered_pois.append(poi)
+            except Exception as e:
+                print(f"⚠️ Error filtering POI {poi.get('id', 'unknown')}: {e}")
+                # Skip POI nếu có lỗi, không làm crash toàn bộ
+                continue
         
         return filtered_pois
     
@@ -357,7 +385,7 @@ class TimeUtils:
         Lấy thông tin opening hours cho ngày cụ thể
         
         Args:
-            open_hours: Danh sách opening hours của POI
+            open_hours: Danh sách opening hours của POI (hoặc JSON string)
             target_datetime: Ngày cần lấy thông tin
             
         Returns:

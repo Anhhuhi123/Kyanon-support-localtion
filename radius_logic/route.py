@@ -3,6 +3,9 @@ Route Builder Service
 Xây dựng lộ trình tối ưu từ danh sách địa điểm sử dụng thuật toán Greedy
 """
 import math
+import asyncio
+import functools
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
 from config.config import Config
@@ -1124,3 +1127,51 @@ class RouteBuilder:
             result.append(route_data)
         
         return result
+    
+    async def build_routes_async(
+        self,
+        user_location: Tuple[float, float],
+        places: List[Dict[str, Any]],
+        transportation_mode: str,
+        max_time_minutes: int,
+        target_places: int = 5,
+        max_routes: int = 3,
+        current_datetime: Optional[datetime] = None,
+        executor: Optional[ProcessPoolExecutor] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Async wrapper: offload build_routes sang ProcessPoolExecutor để không block event loop
+        
+        Args:
+            user_location: Tọa độ user (lat, lon)
+            places: Danh sách địa điểm
+            transportation_mode: Phương tiện di chuyển
+            max_time_minutes: Thời gian tối đa (phút)
+            target_places: Số lượng địa điểm trong mỗi route
+            max_routes: Số lượng routes tối đa
+            current_datetime: Thời điểm hiện tại của user
+            executor: ProcessPoolExecutor (None = dùng default threadpool)
+            
+        Returns:
+            List các routes tối ưu
+            
+        Note:
+            - Dùng ProcessPoolExecutor cho CPU-intensive greedy algorithm
+            - Nếu không truyền executor, sẽ dùng default threadpool (tốt cho quick tests)
+            - Production nên tạo ProcessPoolExecutor pool và reuse
+        """
+        loop = asyncio.get_running_loop()
+        func = functools.partial(
+            self.build_routes,
+            user_location,
+            places,
+            transportation_mode,
+            max_time_minutes,
+            target_places,
+            max_routes,
+            current_datetime
+        )
+        
+        # Nếu không truyền executor (process pool), dùng default threadpool
+        # ProcessPoolExecutor tốt hơn cho CPU-bound nhưng cần pickle-safe
+        return await loop.run_in_executor(executor, func)

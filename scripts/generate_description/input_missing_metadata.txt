@@ -7,17 +7,17 @@ Allowed values:
 
 1. poi_type_new – must be one of:
    - "Restaurant"
-   - "Cafe"
+   - "Cafe & Bakery"
    - "Bar"
 
 2. main_subcategory – must be one of:
    - Restaurant: ["Casual Restaurant","Fine Dining","Family Restaurant","Buffet","Fast Food"]
-   - Cafe: ["Coffee Shop","Tea House","Dessert Cafe","Bakery"]
+   - Cafe & Bakery: ["Coffee Shop","Tea House","Dessert Cafe","Bakery"]
    - Bar: ["Nightclub","Live Music Venue","Pub & Sports Bar","Rooftop / View Bar"]
 
 3. specialization – must be chosen from:
    - Restaurant: ["Seafood","Sushi","BBQ","Steakhouse","Italian","French","Indian","Japanese","Korean","Thai","Vietnamese","Chinese","Local Food","Vegan/Vegetarian","Fusion"]
-   - Cafe: ["Pastries","Breakfast/Brunch","Desserts","Vegan Options","Work-friendly","Specialty Coffee","Specialty Tea","Bakery Items", "Pet-friendly"]
+   - Cafe & Bakery: ["Pastries","Breakfast/Brunch","Desserts","Vegan Options","Work-friendly","Specialty Coffee","Specialty Tea","Bakery Items", "Pet-friendly"]
    - Bar: ["Nightlife / Party","Chill & Lounge","Live Entertainment","Sports & Social","Scenic View","Craft & Signature"]
 
 Suitability (REQUIRED): Always include the suitability field with Solo, Couple, Friends, Family with kids, and Business traveler / free time percentages (0–100, not required to sum to 100). If you have metadata from "Popular for", "Atmosphere", "Offerings", "Highlights" to estimate suitability, use that. If metadata is limited or missing, estimate suitability based on poi_type_new and main_subcategory or poi_type_new(if only have poi_type_new) using reasonable defaults for that type of venue.
