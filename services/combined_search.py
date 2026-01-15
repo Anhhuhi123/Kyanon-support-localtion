@@ -9,8 +9,9 @@ import asyncpg
 import redis.asyncio as aioredis
 from services.qdrant_search import SemanticSearchBase
 from services.location_service import LocationService
+from services.poi_service import PoiService
 from utils.time_utils import TimeUtils
-
+from uuid import UUID
 
 class CombinedSearchService(SemanticSearchBase):
     """Service kết hợp spatial + semantic search"""
@@ -143,6 +144,7 @@ class CombinedSearchService(SemanticSearchBase):
         longitude: float,
         transportation_mode: str,
         semantic_query: str,
+        user_id: Optional[UUID] = None,
         top_k_semantic: int = 10,
         customer_like: bool = False,
         current_datetime: Optional[datetime] = None,
@@ -226,7 +228,7 @@ class CombinedSearchService(SemanticSearchBase):
                 }
             
             id_list = [loc["id"] for loc in spatial_results["results"]]
-            
+          
             if not id_list:
                 return {
                     "status": "success",
@@ -238,6 +240,11 @@ class CombinedSearchService(SemanticSearchBase):
                     },
                     "results": []
                 }
+            if user_id:
+                # get_visited_pois_by_user
+                visited_poi_ids = PoiService.get_visited_pois_by_user(user_id) or []
+                visited_set = {str(pid) for pid in visited_poi_ids}
+                id_list = [pid for pid in id_list if pid not in visited_set]
             
             # 2. Semantic search cho từng query
             # Dùng dict để track POI tốt nhất cho mỗi ID (chọn similarity cao nhất)

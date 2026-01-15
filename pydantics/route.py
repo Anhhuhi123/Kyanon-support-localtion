@@ -1,7 +1,7 @@
 from typing import Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
-
+from uuid import UUID
 class SemanticSearchRequest(BaseModel):
     """Request model cho tìm kiếm ngữ nghĩa (không cần filter ID)"""
     query: str = Field(..., description="Câu query tìm kiếm ngữ nghĩa", json_schema_extra={"example": "Travel"})
@@ -19,6 +19,10 @@ class CombinedSearchRequest(BaseModel):
 
 class RouteSearchRequest(BaseModel):
     """Request model cho tìm kiếm và xây dựng lộ trình"""
+    user_id: Optional[UUID] = Field(
+        None,
+        example="816d05bf-5b65-49d2-9087-77c4c83be655"
+    )
     latitude: float = Field(..., description="Vĩ độ user", json_schema_extra={"example": 10.774087})
     longitude: float = Field(..., description="Kinh độ user", json_schema_extra={"example": 106.703535})
     transportation_mode: str = Field(..., description="Phương tiện (WALKING/BICYCLING/TRANSIT/FLEXIBLE/DRIVING)", json_schema_extra={"example": "WALKING"})

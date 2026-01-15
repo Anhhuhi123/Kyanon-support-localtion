@@ -15,12 +15,12 @@ class PoiService:
             cursor_factory=RealDictCursor
         )
         cursor = conn.cursor()
-
+        print(type(user_id))
         try:
             # 1. Lấy itinerary id
             cursor.execute(
                 'SELECT id FROM "UserItinerary" WHERE "userId" = %s',
-                (str(user_id.user_id),)
+                (str(user_id),)
             )
             itinerary = cursor.fetchone()
             if not itinerary:

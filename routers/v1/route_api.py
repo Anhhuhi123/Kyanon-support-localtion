@@ -151,6 +151,7 @@ async def route_search(request: RouteSearchRequest):
             longitude=request.longitude,
             transportation_mode=request.transportation_mode,
             semantic_query=request.semantic_query,
+            user_id = request.user_id,
             max_time_minutes=request.max_time_minutes,
             target_places=request.target_places,
             max_routes=request.max_routes,

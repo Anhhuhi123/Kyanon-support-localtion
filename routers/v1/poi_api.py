@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/v1/poi", tags=["Poi"])
 
 @router.post("/visited")
 def get_poi_visited(user_id: UserIdRequest):
-    poi_ids =  PoiService.get_visited_pois_by_user(user_id)
+    poi_ids =  PoiService.get_visited_pois_by_user(user_id.user_id)
     return PoiService.get_poi_by_ids(poi_ids)
 
 # @router.post("/sync_pois")

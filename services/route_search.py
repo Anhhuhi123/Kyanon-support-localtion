@@ -10,7 +10,7 @@ import asyncpg
 import redis.asyncio as aioredis
 from services.combined_search import CombinedSearchService
 from radius_logic.route import RouteBuilder
-
+from uuid import UUID
 
 class RouteSearchService(CombinedSearchService):
     """Service xây dựng lộ trình từ kết quả search"""
@@ -37,6 +37,7 @@ class RouteSearchService(CombinedSearchService):
         longitude: float,
         transportation_mode: str,
         semantic_query: str,
+        user_id: Optional[UUID] = None,
         max_time_minutes: int = 180,
         target_places: int = 5,
         max_routes: int = 3,
@@ -77,6 +78,7 @@ class RouteSearchService(CombinedSearchService):
                 longitude=longitude,
                 transportation_mode=transportation_mode,
                 semantic_query=semantic_query,
+                user_id=user_id,
                 top_k_semantic=top_k_semantic,
                 customer_like=customer_like,
                 current_datetime=current_datetime,
@@ -92,7 +94,7 @@ class RouteSearchService(CombinedSearchService):
                 }
             
             semantic_places = search_result.get("results", [])
-            
+          
             if not semantic_places:
                 return {
                     "status": "success",

@@ -14,7 +14,7 @@ import redis.asyncio as aioredis
 from services.qdrant_search import SemanticSearchBase
 from services.combined_search import CombinedSearchService
 from services.route_search import RouteSearchService
-
+from uuid import UUID
 
 class SemanticSearchService:
     """
@@ -108,6 +108,7 @@ class SemanticSearchService:
         longitude: float,
         transportation_mode: str,
         semantic_query: str,
+        user_id: Optional[UUID] = None,
         max_time_minutes: int = 180,
         target_places: int = 5,
         max_routes: int = 3,
@@ -120,7 +121,7 @@ class SemanticSearchService:
         Tìm kiếm kết hợp + Xây dựng lộ trình với tùy chọn lọc theo thời gian mở cửa
         """
         return await self.route_service.build_routes(
-            latitude, longitude, transportation_mode, semantic_query,
+            latitude, longitude, transportation_mode, semantic_query, user_id,
             max_time_minutes, target_places, max_routes, top_k_semantic,
             customer_like, current_datetime
         )
