@@ -97,30 +97,10 @@ class PoiService:
             List dict chứa thông tin POI
         """
         
-        if not user_id:
-            raise HTTPException(
-                status_code=400,
-                detail="error"
-            )
-
-        if not poi_id:
-            raise HTTPException(
-                status_code=400,
-                detail="error"
-            )
-        if not route_id:
-            raise HTTPException(
-                status_code=400,
-                detail="error"
-            )
         if not self.db_pool:
             raise HTTPException(status_code=500, detail="Database pool not initialized")
         
         try:
-            # lưu cache
-            print("user_id:", user_id)
-            print("poi_id:", poi_id)
-            print("route_id:", route_id)
             return {
                 "status": "success"
             }

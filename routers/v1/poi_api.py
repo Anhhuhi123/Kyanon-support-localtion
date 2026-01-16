@@ -4,13 +4,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'
 
 from fastapi import APIRouter, HTTPException
 from pydantics.user import UserIdRequest 
-from pydantics.poi import SelectedPoiRequest
+from pydantics.poi import ConfirmReplaceRequest
 from services.poi_service import PoiService
 
 router = APIRouter(prefix="/api/v1/poi", tags=["Poi"])
 
 # Service instance sẽ được set từ server.py startup event
 poi_service: PoiService = None
+search_service = None  # Will be set from server.py
 
 @router.post("/visited")
 async def get_poi_visited(user_id: UserIdRequest):
@@ -35,12 +36,33 @@ async def get_poi_visited(user_id: UserIdRequest):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.post("/selected_poi")
-async def selected_poi(req: SelectedPoiRequest):
-    if poi_service is None:
-        raise HTTPException(status_code=500, detail="POI service not initialized")
+@router.post("/confirm-replace")
+async def confirm_replace_poi(req: ConfirmReplaceRequest):
+    """
+    Xác nhận thay thế POI và cập nhật cache
+    
+    Args:
+        req: ConfirmReplaceRequest chứa user_id, route_id, old_poi_id, new_poi_id
+        
+    Returns:
+        Dict chứa thông tin route đã được cập nhật
+    """
+    if search_service is None:
+        raise HTTPException(status_code=500, detail="Search service not initialized")
+    
     try:
-        return await poi_service.get_selected_poi(req.user_id, req.poi_id, req.route_id)
+        result = await search_service.confirm_replace_poi(
+            user_id=req.user_id,
+            route_id=req.route_id,
+            old_poi_id=req.old_poi_id,
+            new_poi_id=req.new_poi_id
+        )
+        
+        if result.get("status") == "error":
+            raise HTTPException(status_code=400, detail=result.get("error"))
+        
+        return result
+        
     except HTTPException:
         raise
     except Exception as e:

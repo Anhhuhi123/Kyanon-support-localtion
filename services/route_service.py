@@ -198,6 +198,7 @@ class SemanticSearchService:
                 replaced_pois_by_category[category] = []
             
             available_poi_ids = all_routes_metadata['available_pois_by_category'].get(category, [])
+            total_available = len(available_poi_ids)
             
             # Lọc bỏ các POI đã có trong route VÀ POI đã từng thay thế
             current_poi_ids = {poi['poi_id'] for poi in route_metadata['pois']}
@@ -207,14 +208,17 @@ class SemanticSearchService:
                 if pid not in current_poi_ids and pid not in replaced_poi_ids
             ]
             
+            print(f"📊 Category '{category}': Total={total_available}, In route={len(current_poi_ids)}, Replaced={len(replaced_poi_ids)}, Available={len(available_poi_ids)}")
+            
             # Nếu hết POI khả dụng, reset danh sách đã thay thế và thử lại
             if not available_poi_ids:
-                print(f"⚠️  No POIs available for category '{category}', resetting replaced list")
+                print(f"🔄 Category '{category}' đã hết POI - RESET replaced list (đã dùng {len(replaced_poi_ids)} POI)")
                 replaced_pois_by_category[category] = []
                 available_poi_ids = [
                     pid for pid in all_routes_metadata['available_pois_by_category'].get(category, [])
                     if pid not in current_poi_ids
                 ]
+                print(f"✅ Reset xong - Available sau reset: {len(available_poi_ids)} POI")
                 
                 # Nếu vẫn không có POI (đã hết hẳn), trả về success với array rỗng
                 if not available_poi_ids:
@@ -363,10 +367,14 @@ class SemanticSearchService:
                 
                 formatted_candidates.append(formatted_poi)
             
-            # 10. Lưu POI cũ vào danh sách đã thay thế và persist cache
-            if poi_id_to_replace not in replaced_pois_by_category[category]:
-                replaced_pois_by_category[category].append(poi_id_to_replace)
+            # 10. Lưu 3 POI candidates vào danh sách đã thay thế để không đề xuất lại
+            selected_ids = [p['id'] for p in top_pois]
+            for sid in selected_ids:
+                if sid not in replaced_pois_by_category[category]:
+                    replaced_pois_by_category[category].append(sid)
             all_routes_metadata['replaced_pois_by_category'] = replaced_pois_by_category
+            
+            print(f"💾 Đã lưu {len(selected_ids)} candidate(s) vào replaced list - Category '{category}' hiện có {len(replaced_pois_by_category[category])} POI đã thay thế")
             
             # Persist metadata vào Redis
             if self.redis_client:
@@ -390,6 +398,133 @@ class SemanticSearchService:
         except Exception as e:
             import traceback
             print(f"❌ Error in update_poi_in_route: {str(e)}")
+            print(traceback.format_exc())
+            return {
+                "status": "error",
+                "error": str(e)
+            }
+    
+    async def confirm_replace_poi(
+        self,
+        user_id: UUID,
+        route_id: str,
+        old_poi_id: str,
+        new_poi_id: str
+    ) -> Dict[str, Any]:
+        """
+        Xác nhận thay thế POI và cập nhật cache
+        
+        Args:
+            user_id: UUID của user
+            route_id: ID của route (1, 2, 3, ...)
+            old_poi_id: ID của POI cũ bị thay thế
+            new_poi_id: ID của POI mới user đã chọn
+            
+        Returns:
+            Dict chứa thông tin route đã được cập nhật
+        """
+        try:
+            # 1. Lấy route metadata từ cache
+            all_routes_metadata = await self.cache_service.get_route_metadata(user_id)
+            
+            if not all_routes_metadata:
+                return {
+                    "status": "error",
+                    "error": f"Route not found in cache for user {user_id}"
+                }
+            
+            # 2. Lấy route cụ thể
+            if route_id not in all_routes_metadata.get('routes', {}):
+                return {
+                    "status": "error",
+                    "error": f"Route '{route_id}' not found. Available routes: {list(all_routes_metadata.get('routes', {}).keys())}"
+                }
+            
+            route_metadata = all_routes_metadata['routes'][route_id]
+            
+            # 3. Tìm POI cần thay thế trong route
+            poi_position = None
+            old_category = None
+            
+            for idx, poi in enumerate(route_metadata['pois']):
+                if poi['poi_id'] == old_poi_id:
+                    poi_position = idx
+                    old_category = poi['category']
+                    break
+            
+            if poi_position is None:
+                return {
+                    "status": "error",
+                    "error": f"POI {old_poi_id} not found in route"
+                }
+            
+            # 4. Lấy thông tin POI mới từ cache
+            new_poi_data = await self.cache_service.get_poi_data(new_poi_id)
+            
+            if not new_poi_data:
+                return {
+                    "status": "error",
+                    "error": f"New POI data not found: {new_poi_id}"
+                }
+            
+            # 5. Cập nhật POI trong route metadata
+            route_metadata['pois'][poi_position] = {
+                "poi_id": new_poi_id,
+                "category": old_category
+            }
+            
+            all_routes_metadata['routes'][route_id] = route_metadata
+            
+            # 6. Đánh dấu new_poi_id đã được sử dụng trong replaced_pois_by_category
+            if 'replaced_pois_by_category' not in all_routes_metadata:
+                all_routes_metadata['replaced_pois_by_category'] = {}
+            
+            replaced_pois_by_category = all_routes_metadata['replaced_pois_by_category']
+            if old_category not in replaced_pois_by_category:
+                replaced_pois_by_category[old_category] = []
+            
+            if new_poi_id not in replaced_pois_by_category[old_category]:
+                replaced_pois_by_category[old_category].append(new_poi_id)
+            
+            all_routes_metadata['replaced_pois_by_category'] = replaced_pois_by_category
+            
+            print(f"✅ Confirmed replace: {old_poi_id} → {new_poi_id}")
+            print(f"📊 Category '{old_category}' hiện có {len(replaced_pois_by_category[old_category])} POI đã được chọn/thay thế")
+            
+            # 7. Lưu lại cache
+            if self.redis_client:
+                import json
+                cache_key = f"route_metadata:{user_id}"
+                await self.redis_client.setex(
+                    cache_key,
+                    3600,
+                    json.dumps(all_routes_metadata)
+                )
+            
+            # 8. Trả về thông tin route đã cập nhật
+            updated_pois = []
+            for idx, poi in enumerate(route_metadata['pois'], 1):
+                poi_data = await self.cache_service.get_poi_data(poi['poi_id'])
+                if poi_data:
+                    updated_pois.append(
+                        self.poi_update_service.format_poi_for_response(
+                            poi['poi_id'],
+                            poi_data,
+                            poi['category'],
+                            idx
+                        )
+                    )
+            
+            return {
+                "status": "success",
+                "message": f"Successfully replaced POI {old_poi_id} with {new_poi_id}",
+                "route_id": route_id,
+                "updated_pois": updated_pois
+            }
+            
+        except Exception as e:
+            import traceback
+            print(f"❌ Error in confirm_replace_poi: {str(e)}")
             print(traceback.format_exc())
             return {
                 "status": "error",

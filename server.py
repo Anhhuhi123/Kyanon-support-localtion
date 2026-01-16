@@ -142,6 +142,9 @@ async def startup_event():
         redis_client=redis_client
     )
     
+    # Set search_service cho POI API (dùng chung với route service)
+    poi_api_module.search_service = route_api_module._route_service_instance
+    
     # 3. Initialize AsyncQdrantClient và attach vào route service
     async_qdrant = AsyncQdrantClient(
         url=Config.QDRANT_URL,
