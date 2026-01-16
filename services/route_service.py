@@ -395,3 +395,115 @@ class SemanticSearchService:
                 "status": "error",
                 "error": str(e)
             }
+
+    async def replace_route(
+        self,
+        user_id: UUID,
+        route_id: int
+    ) -> Dict[str, Any]:
+        """
+        Replace route: Tạo route mới với POI IDs khác, xóa route cũ
+        
+        Args:
+            user_id: UUID của user
+            route_id: ID của route cần replace (1, 2, 3, ...)
+            
+        Returns:
+            Dict chứa route_id mới
+        """
+        try:
+            # 1. Lấy route metadata từ cache
+            all_routes_metadata = await self.cache_service.get_route_metadata(user_id)
+            
+            if not all_routes_metadata:
+                return {
+                    "status": "error",
+                    "error": f"Route not found in cache for user {user_id}"
+                }
+            
+            route_id_str = str(route_id)
+            
+            # 2. Kiểm tra route có tồn tại không
+            if route_id_str not in all_routes_metadata.get('routes', {}):
+                return {
+                    "status": "error",
+                    "error": f"Route '{route_id}' not found. Available routes: {list(all_routes_metadata.get('routes', {}).keys())}"
+                }
+            
+            route_metadata = all_routes_metadata['routes'][route_id_str]
+            available_pois_by_category = all_routes_metadata.get('available_pois_by_category', {})
+            
+            # 3. Tìm route_id cao nhất để tạo route mới
+            existing_route_ids = [int(rid) for rid in all_routes_metadata.get('routes', {}).keys() if rid.isdigit()]
+            new_route_id = max(existing_route_ids) + 1 if existing_route_ids else route_id + 1
+            new_route_id_str = str(new_route_id)
+            
+            # 4. Tạo route mới với POI IDs khác (cùng category nhưng không trùng)
+            current_poi_ids = {poi['poi_id'] for poi in route_metadata['pois']}
+            new_route_pois = []
+            
+            for poi in route_metadata['pois']:
+                category = poi['category']
+                available_poi_ids = available_pois_by_category.get(category, [])
+                
+                # Lọc bỏ POI đã có trong route cũ và các route khác
+                all_existing_poi_ids = set()
+                for rid, rdata in all_routes_metadata.get('routes', {}).items():
+                    for p in rdata.get('pois', []):
+                        all_existing_poi_ids.add(p['poi_id'])
+                
+                # Tìm POI mới cùng category nhưng khác ID
+                new_poi_id = None
+                for pid in available_poi_ids:
+                    if pid not in all_existing_poi_ids and pid != poi['poi_id']:
+                        new_poi_id = pid
+                        break
+                
+                if not new_poi_id:
+                    return {
+                        "status": "error",
+                        "error": f"No alternative POI found for category '{category}'"
+                    }
+                
+                new_route_pois.append({
+                    "poi_id": new_poi_id,
+                    "category": category
+                })
+            
+            # 5. Tạo route mới trong cache
+            all_routes_metadata['routes'][new_route_id_str] = {
+                "pois": new_route_pois
+            }
+            
+            # 6. Xóa route cũ
+            del all_routes_metadata['routes'][route_id_str]
+            
+            # 7. Lưu lại vào cache
+            if self.redis_client:
+                import json
+                cache_key = f"route_metadata:{user_id}"
+                await self.redis_client.setex(
+                    cache_key,
+                    3600,
+                    json.dumps(all_routes_metadata)
+                )
+            
+            # 8. Lấy POI IDs để trả về (nếu cần metadata thì query database)
+            poi_ids = [poi['poi_id'] for poi in new_route_pois]
+            
+            return {
+                "status": "success",
+                "message": f"Route replaced successfully",
+                "old_route_id": route_id,
+                "new_route_id": new_route_id,
+                "poi_ids": poi_ids
+            }
+            
+        except Exception as e:
+            import traceback
+            print(f"❌ Error in replace_route: {str(e)}")
+            print(traceback.format_exc())
+            return {
+                "status": "error",
+                "error": str(e)
+            }
