@@ -25,6 +25,7 @@ class CacheSearchService:
         user_id: UUID, 
         routes: list, 
         semantic_places: list,
+        transportation_mode: str = "DRIVING",
         ttl: int = 3600
     ):
         """
@@ -35,6 +36,7 @@ class CacheSearchService:
         Lưu structure:
         {
             "user_id": "...",
+            "transportation_mode": "DRIVING",
             "routes": {
                 "1": {
                     "pois": [
@@ -57,6 +59,7 @@ class CacheSearchService:
             user_id: UUID của user
             routes: Danh sách routes đã build
             semantic_places: Danh sách POI từ semantic search (có category)
+            transportation_mode: Phương tiện di chuyển
             ttl: Time to live (seconds), default 1 hour
         """
         if not self.redis_client:
@@ -97,6 +100,7 @@ class CacheSearchService:
             # Tạo cache data chứa TẤT CẢ routes
             cache_data = {
                 "user_id": str(user_id),
+                "transportation_mode": transportation_mode,
                 "routes": routes_data,
                 "available_pois_by_category": available_pois_by_category
             }

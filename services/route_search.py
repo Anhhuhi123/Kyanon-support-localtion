@@ -134,7 +134,8 @@ class RouteSearchService(CombinedSearchService):
                 await self.cache_service.cache_route_metadata(
                     user_id=user_id,
                     routes=routes,
-                    semantic_places=semantic_places
+                    semantic_places=semantic_places,
+                    transportation_mode=transportation_mode
                 )
             
             # Lấy timing detail từ search result

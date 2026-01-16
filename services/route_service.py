@@ -189,17 +189,40 @@ class SemanticSearchService:
             category = poi_to_replace['category']
             
             # 4. Lấy danh sách POI available cùng category
+            # Khởi tạo replaced_pois_by_category nếu chưa có
+            if 'replaced_pois_by_category' not in all_routes_metadata:
+                all_routes_metadata['replaced_pois_by_category'] = {}
+            
+            replaced_pois_by_category = all_routes_metadata['replaced_pois_by_category']
+            if category not in replaced_pois_by_category:
+                replaced_pois_by_category[category] = []
+            
             available_poi_ids = all_routes_metadata['available_pois_by_category'].get(category, [])
             
-            # Lọc bỏ các POI đã có trong route
+            # Lọc bỏ các POI đã có trong route VÀ POI đã từng thay thế
             current_poi_ids = {poi['poi_id'] for poi in route_metadata['pois']}
-            available_poi_ids = [pid for pid in available_poi_ids if pid not in current_poi_ids]
+            replaced_poi_ids = set(replaced_pois_by_category[category])
+            available_poi_ids = [
+                pid for pid in available_poi_ids 
+                if pid not in current_poi_ids and pid not in replaced_poi_ids
+            ]
             
+            # Nếu hết POI khả dụng, reset danh sách đã thay thế và thử lại
             if not available_poi_ids:
-                return {
-                    "status": "error",
-                    "error": f"No alternative POIs available in category '{category}'"
-                }
+                print(f"⚠️  No POIs available for category '{category}', resetting replaced list")
+                replaced_pois_by_category[category] = []
+                available_poi_ids = [
+                    pid for pid in all_routes_metadata['available_pois_by_category'].get(category, [])
+                    if pid not in current_poi_ids
+                ]
+                
+                # Nếu vẫn không có POI (đã hết hẳn), trả về success với array rỗng
+                if not available_poi_ids:
+                    return {
+                        "status": "success",
+                        "message": f"No more alternative POIs available in category '{category}'",
+                        "candidates": []
+                    }
             
             # 5. Lấy thông tin chi tiết POI từ cache
             candidate_pois = []
@@ -212,22 +235,43 @@ class SemanticSearchService:
                     poi_dict['category'] = category
                     candidate_pois.append(poi_dict)
             
+            # Nếu không có POI data trong cache, trả về success với array rỗng
             if not candidate_pois:
                 return {
-                    "status": "error",
-                    "error": f"No POI data found in cache for category '{category}'"
+                    "status": "success",
+                    "message": f"No POI data found in cache for category '{category}'",
+                    "candidates": []
                 }
             
-            # 6. Chọn POI tốt nhất (validate opening hours)
-            new_poi = self.poi_update_service.select_best_poi(
+            # 6. Chọn top 3 POI tốt nhất (validate opening hours)
+            # Sử dụng POI trước đó làm reference point để tính distance
+            reference_point = None
+            if poi_position > 0:
+                prev_poi_id = route_metadata['pois'][poi_position - 1]['poi_id']
+                prev_poi_ref = await self.cache_service.get_poi_data(prev_poi_id)
+                if prev_poi_ref and prev_poi_ref.get('lat') and prev_poi_ref.get('lon'):
+                    reference_point = (prev_poi_ref['lat'], prev_poi_ref['lon'])
+            elif len(route_metadata['pois']) > 1:
+                # Nếu là POI đầu, dùng POI thứ 2 làm reference
+                next_poi_id = route_metadata['pois'][1]['poi_id']
+                next_poi_ref = await self.cache_service.get_poi_data(next_poi_id)
+                if next_poi_ref and next_poi_ref.get('lat') and next_poi_ref.get('lon'):
+                    reference_point = (next_poi_ref['lat'], next_poi_ref['lon'])
+            
+            # Chọn top 3 POI thay thế
+            top_pois = self.poi_update_service.select_top_n_pois(
                 candidate_pois,
-                current_datetime
+                n=3,
+                current_datetime=current_datetime,
+                reference_point=reference_point
             )
             
-            if not new_poi:
+            # Nếu không có POI nào, trả về success với array rỗng
+            if not top_pois:
                 return {
-                    "status": "error",
-                    "error": f"No POIs open at {current_datetime} in category '{category}'" if current_datetime else "Failed to select POI"
+                    "status": "success",
+                    "message": f"No suitable POIs found in category '{category}'",
+                    "candidates": []
                 }
             
             # 7. Lấy POI cũ để tính distance
@@ -239,7 +283,7 @@ class SemanticSearchService:
                     "error": f"Old POI data not found: {poi_id_to_replace}"
                 }
             
-            # 8. Lấy POI trước và sau (nếu có)
+            # 8. Lấy POI trước và sau (nếu có) để tính travel time
             prev_poi_data = None
             next_poi_data = None
             
@@ -251,23 +295,80 @@ class SemanticSearchService:
                 next_poi_id = route_metadata['pois'][poi_position + 1]['poi_id']
                 next_poi_data = await self.cache_service.get_poi_data(next_poi_id)
             
-            # 9. Tính toán distance changes
-            distance_changes = self.poi_update_service.calculate_distance_changes(
-                old_poi_data,
-                new_poi,
-                prev_poi_data,
-                next_poi_data
-            )
+            # 9. Format top 3 POI candidates với đầy đủ thông tin
+            from radius_logic.route.route_config import RouteConfig
+            from utils.time_utils import TimeUtils
             
-            # 10. Update route metadata trong cache
-            route_metadata['pois'][poi_position] = {
-                "poi_id": str(new_poi['id']),
-                "category": category
-            }
+            transportation_mode = all_routes_metadata.get('transportation_mode', 'DRIVING')
+            formatted_candidates = []
             
-            all_routes_metadata['routes'][route_id] = route_metadata
+            for poi in top_pois:
+                # Tính travel_time từ POI trước
+                travel_time_minutes = 0
+                if prev_poi_data and prev_poi_data.get('lat') and prev_poi_data.get('lon'):
+                    distance_km = self.poi_update_service.geo_utils.calculate_distance_haversine(
+                        prev_poi_data['lat'], prev_poi_data['lon'],
+                        poi['lat'], poi['lon']
+                    )
+                    speed = RouteConfig.TRANSPORTATION_SPEEDS.get(transportation_mode.upper(), 40)
+                    travel_time_minutes = round((distance_km / speed) * 60, 1)
+                
+                # Stay time
+                stay_time_minutes = RouteConfig.DEFAULT_STAY_TIME
+                
+                # Tính distance changes so với POI cũ
+                distance_changes = self.poi_update_service.calculate_distance_changes(
+                    old_poi_data,
+                    poi,
+                    prev_poi_data,
+                    next_poi_data
+                )
+                
+                time_changes = self.poi_update_service.calculate_travel_time_changes(
+                    distance_changes,
+                    transportation_mode
+                )
+                
+                # Format POI
+                formatted_poi = {
+                    "place_id": poi['id'],
+                    "place_name": poi.get('name', 'N/A'),
+                    "poi_type": poi.get('poi_type', ''),
+                    "poi_type_clean": poi.get('poi_type_clean', ''),
+                    "main_subcategory": poi.get('main_subcategory'),
+                    "specialization": poi.get('specialization'),
+                    "category": category,
+                    "address": poi.get('address', ''),
+                    "lat": poi.get('lat'),
+                    "lon": poi.get('lon'),
+                    "rating": poi.get('rating', 0.5),
+                    "open_hours": poi.get('open_hours', []),
+                    "travel_time_minutes": travel_time_minutes,
+                    "stay_time_minutes": stay_time_minutes,
+                    "distance_changes": distance_changes,
+                    "time_changes": time_changes
+                }
+                
+                # Thêm arrival_time và opening_hours_today nếu có current_datetime
+                if current_datetime and prev_poi_data:
+                    # Tính arrival_time = current_datetime + travel_time
+                    from datetime import timedelta
+                    arrival_time = current_datetime + timedelta(minutes=travel_time_minutes)
+                    formatted_poi['arrival_time'] = arrival_time.strftime('%Y-%m-%d %H:%M:%S')
+                    
+                    # Format opening hours cho ngày arrival
+                    open_hours = TimeUtils.normalize_open_hours(poi.get('open_hours'))
+                    opening_hours_today = TimeUtils.get_opening_hours_for_date(open_hours, arrival_time)
+                    formatted_poi['opening_hours_today'] = opening_hours_today
+                
+                formatted_candidates.append(formatted_poi)
             
-            # Lưu lại cache
+            # 10. Lưu POI cũ vào danh sách đã thay thế và persist cache
+            if poi_id_to_replace not in replaced_pois_by_category[category]:
+                replaced_pois_by_category[category].append(poi_id_to_replace)
+            all_routes_metadata['replaced_pois_by_category'] = replaced_pois_by_category
+            
+            # Persist metadata vào Redis
             if self.redis_client:
                 import json
                 cache_key = f"route_metadata:{user_id}"
@@ -277,30 +378,13 @@ class SemanticSearchService:
                     json.dumps(all_routes_metadata)
                 )
             
-            # 11. Format POIs đầy đủ cho response
-            updated_pois_full = []
-            for idx, poi in enumerate(route_metadata['pois'], 1):
-                poi_data = await self.cache_service.get_poi_data(poi['poi_id'])
-                
-                if poi_data:
-                    updated_pois_full.append(
-                        self.poi_update_service.format_poi_for_response(
-                            poi['poi_id'],
-                            poi_data,
-                            poi['category'],
-                            idx
-                        )
-                    )
-            
             return {
                 "status": "success",
-                "message": f"Successfully replaced POI {poi_id_to_replace} with {new_poi['id']}",
+                "message": f"Found {len(formatted_candidates)} alternative POI(s) for category '{category}'",
                 "old_poi_id": poi_id_to_replace,
-                "new_poi": new_poi,
                 "category": category,
                 "route_id": route_id,
-                "updated_pois": updated_pois_full,
-                "distance_changes": distance_changes
+                "candidates": formatted_candidates
             }
             
         except Exception as e:
