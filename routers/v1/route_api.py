@@ -99,6 +99,8 @@ async def route_search(request: RouteSearchRequest):
     Tìm kiếm và xây dựng lộ trình tối ưu
     
     Workflow:
+    1. Nếu replace_route được set: Check cache và replace route
+    2. Nếu delete_cache = True: Xóa cache trước khi build
     1. Spatial search (PostGIS) → Tìm tất cả địa điểm gần (>= 50)
     2. Semantic search (Qdrant) → Top 10 địa điểm phù hợp nhất với nhu cầu
     3. Route building (Greedy) → Xây dựng tối đa 3 lộ trình tốt nhất
@@ -112,6 +114,8 @@ async def route_search(request: RouteSearchRequest):
         target_places: Số địa điểm mỗi lộ trình - mặc định 5
         max_routes: Số lộ trình tối đa - mặc định 3
         top_k_semantic: Số địa điểm từ semantic search - mặc định 10
+        replace_route: Route ID cần replace (optional)
+        delete_cache: Xóa cache trước khi build (optional)
     
     Returns:
         JSON response với tối đa 3 lộ trình tốt nhất
@@ -146,11 +150,37 @@ async def route_search(request: RouteSearchRequest):
         }
     """
     try:
+
+                # 1. Xử lý delete_cache nếu được yêu cầu
+        if request.delete_cache and request.user_id:
+            await get_semantic_service().cache_service.delete_user_cache(request.user_id)
+        
+        # 2. Xử lý replace_route nếu được yêu cầu
+        if request.replace_route is not None and request.user_id:
+            replace_result = await get_semantic_service().replace_route(
+                user_id=request.user_id,
+                route_id=request.replace_route
+            )
+            
+            if replace_result["status"] == "error":
+                raise HTTPException(status_code=400, detail=replace_result.get("error", "Unknown error"))
+            
+            # Nếu replace thành công, chỉ trả về route_id mới, không build routes mới
+            return {
+                "status": "success",
+                "message": "Route replaced successfully",
+                "old_route_id": request.replace_route,
+                "new_route_id": replace_result.get("new_route_id"),
+                "poi_ids": replace_result.get("poi_ids", [])
+            }
+        
+        # 3. Build routes bình thường
         result = await get_semantic_service().build_routes(
             latitude=request.latitude,
             longitude=request.longitude,
             transportation_mode=request.transportation_mode,
             semantic_query=request.semantic_query,
+            user_id=request.user_id,
             max_time_minutes=request.max_time_minutes,
             target_places=request.target_places,
             max_routes=request.max_routes,
@@ -169,38 +199,3 @@ async def route_search(request: RouteSearchRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
-@router.post("/replace")
-async def replace_route(request: ReplaceRouteRequest):
-    """
-    Replace route: Tạo route mới với POI IDs khác, xóa route cũ
-    
-    Workflow:
-    1. Check cache xem user có route chưa
-    2. Nếu có route, tạo route mới với route_id + 1
-    3. Route mới có POI IDs khác (không trùng)
-    4. Lưu route mới vào cache
-    5. Xóa route cũ
-    6. Trả về route_id mới
-    
-    Args:
-        user_id: UUID của user
-        route_id: ID của route cần replace
-    
-    Returns:
-        JSON response với route_id mới
-    """
-    try:
-        result = await get_semantic_service().replace_route(
-            user_id=request.user_id,
-            route_id=request.route_id
-        )
-        
-        if result["status"] == "error":
-            raise HTTPException(status_code=400, detail=result.get("error", "Unknown error"))
-        
-        return result
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

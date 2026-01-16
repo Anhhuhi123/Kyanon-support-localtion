@@ -197,3 +197,26 @@ class CacheSearchService:
         except Exception as e:
             print(f"⚠️  Failed to get POI data: {str(e)}")
             return None
+
+    async def delete_user_cache(self, user_id: UUID) -> bool:
+        """
+        Xóa cache của user
+        
+        Args:
+            user_id: UUID của user
+            
+        Returns:
+            True nếu xóa thành công, False nếu không
+        """
+        if not self.redis_client:
+            return False
+        
+        try:
+            cache_key = f"route_metadata:{user_id}"
+            deleted = await self.redis_client.delete(cache_key)
+            print(f"✅ Deleted cache for user {user_id}: {deleted > 0}")
+            return deleted > 0
+            
+        except Exception as e:
+            print(f"⚠️  Failed to delete user cache: {str(e)}")
+            return False
