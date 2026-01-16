@@ -4,6 +4,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'
 
 from fastapi import APIRouter, HTTPException
 from pydantics.user import UserIdRequest 
+from pydantics.poi import SelectedPoiRequest
 from services.poi_service import PoiService
 
 router = APIRouter(prefix="/api/v1/poi", tags=["Poi"])
@@ -28,6 +29,18 @@ async def get_poi_visited(user_id: UserIdRequest):
     try:
         poi_ids = await poi_service.get_visited_pois_by_user(user_id.user_id)
         return await poi_service.get_poi_by_ids(poi_ids)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/selected_poi")
+async def selected_poi(req: SelectedPoiRequest):
+    if poi_service is None:
+        raise HTTPException(status_code=500, detail="POI service not initialized")
+    try:
+        return await poi_service.get_selected_poi(req.user_id, req.poi_id, req.route_id)
     except HTTPException:
         raise
     except Exception as e:

@@ -85,6 +85,49 @@ class PoiService:
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+        
+    async def get_selected_poi(self, user_id: UUID, poi_id: UUID, route_id: int):
+        """
+        Lấy thông tin POI theo danh sách IDs (ASYNC)
+        
+        Args:
+            poi_ids: List UUID của các POI
+            
+        Returns:
+            List dict chứa thông tin POI
+        """
+        
+        if not user_id:
+            raise HTTPException(
+                status_code=400,
+                detail="error"
+            )
+
+        if not poi_id:
+            raise HTTPException(
+                status_code=400,
+                detail="error"
+            )
+        if not route_id:
+            raise HTTPException(
+                status_code=400,
+                detail="error"
+            )
+        if not self.db_pool:
+            raise HTTPException(status_code=500, detail="Database pool not initialized")
+        
+        try:
+            # lưu cache
+            print("user_id:", user_id)
+            print("poi_id:", poi_id)
+            print("route_id:", route_id)
+            return {
+                "status": "success"
+            }
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
 
 
 
