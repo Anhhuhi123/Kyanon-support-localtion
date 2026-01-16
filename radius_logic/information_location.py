@@ -8,7 +8,6 @@ import redis.asyncio as aioredis
 import json
 from typing import List, Dict, Any, Optional
 from config.config import Config
-import uuid
 
 class LocationInfoService:
     """Service để query thông tin location từ database với async pool và Redis caching"""
@@ -104,14 +103,6 @@ class LocationInfoService:
         Returns:
             Dict chứa thông tin location hoặc None nếu không tìm thấy
         """
-
-        # Validate UUID format 
-        try:
-            uuid.UUID(str(location_id))
-        except (ValueError, TypeError):
-            print(f"Invalid UUID format: {location_id}")
-            return None
-
         # Check cache trước
         cache_key = self._get_cache_key(location_id)
         cached = await self._get_from_cache(cache_key)
@@ -132,7 +123,8 @@ class LocationInfoService:
                         lon,
                         address,
                         poi_type,
-                        normalize_stars_reviews
+                        normalize_stars_reviews,
+                        open_hours
                     FROM public."PoiClean"
                     WHERE id = $1
                 """
@@ -142,6 +134,7 @@ class LocationInfoService:
                 if not row:
                     return None
                 
+                from utils.time_utils import TimeUtils
                 result = {
                     "id": str(row['id']),  # Convert UUID to string
                     "name": row['name'],
@@ -149,7 +142,8 @@ class LocationInfoService:
                     "lon": row['lon'],
                     "address": row['address'],
                     "poi_type": row['poi_type'],
-                    "rating": row['normalize_stars_reviews']
+                    "rating": row['normalize_stars_reviews'],
+                    "open_hours": TimeUtils.normalize_open_hours(row['open_hours'])
                 }
                 
                 # Lưu vào cache
@@ -178,22 +172,9 @@ class LocationInfoService:
         """
         if not location_ids:
             return {}
-
-                # Validate và filter invalid UUIDs trước khi query
-        valid_ids = []
-        for lid in location_ids:
-            try:
-                uuid.UUID(str(lid))
-                valid_ids.append(lid)
-            except ValueError:
-                print(f"Invalid UUID format: {lid}")
-                continue
-        
-        if not valid_ids:
-            return {}
         
         # Bước 1: Check cache cho tất cả IDs (batch get async)
-        cache_keys = [self._get_cache_key(lid) for lid in valid_ids]
+        cache_keys = [self._get_cache_key(lid) for lid in location_ids]
         cached_results = await self._get_many_from_cache(cache_keys)
         
         # Bước 2: Tìm IDs chưa có trong cache
@@ -221,7 +202,8 @@ class LocationInfoService:
                         poi_type_clean,
                         main_subcategory,
                         specialization,
-                        normalize_stars_reviews
+                        normalize_stars_reviews,
+                        open_hours
                     FROM public."PoiClean"
                     WHERE id = ANY($1::uuid[])
                 """
@@ -229,6 +211,7 @@ class LocationInfoService:
                 rows = await conn.fetch(query, missing_ids)
                 
                 # Bước 4: Parse kết quả từ DB
+                from utils.time_utils import TimeUtils
                 db_results = {}
                 for row in rows:
                     location_id = str(row['id'])  # Convert UUID to string
@@ -242,7 +225,8 @@ class LocationInfoService:
                         "poi_type_clean": row['poi_type_clean'],
                         "main_subcategory": row['main_subcategory'],
                         "specialization": row['specialization'],
-                        "rating": row['normalize_stars_reviews']
+                        "rating": row['normalize_stars_reviews'],
+                        "open_hours": TimeUtils.normalize_open_hours(row['open_hours'])
                     }
                 
                 # Bước 5: Cache kết quả mới (batch set async)

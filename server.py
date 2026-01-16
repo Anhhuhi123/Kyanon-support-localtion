@@ -3,9 +3,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 from fastapi import FastAPI
-import redis
-import psycopg2
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient
 from config.config import Config
 from config.db import (
     init_db_pool,
@@ -47,7 +45,7 @@ async def root():
         "health": "/health"
     }
 
-# Health check endpoint với kiểm tra dependencies
+# Health check endpoint với kiểm tra dependencies (ASYNC)
 @app.get("/health", tags=["Health"])
 async def health_check():
     health_status = {
@@ -56,36 +54,43 @@ async def health_check():
         "checks": {}
     }
     
-    # Check Redis
+    # Check Redis (async pool)
     try:
-        redis_client = redis.Redis(
-            host=Config.REDIS_HOST,
-            port=Config.REDIS_PORT,
-            db=Config.REDIS_DB,
-            socket_connect_timeout=2
-        )
-        redis_client.ping()
+        redis_client = get_redis_client()
+        if redis_client is None:
+            raise RuntimeError("Redis client not initialized")
+        await redis_client.ping()
         health_status["checks"]["redis"] = "healthy"
     except Exception as e:
         health_status["checks"]["redis"] = f"unhealthy: {str(e)}"
         health_status["status"] = "degraded"
     
-    # Check Database
+    # Check Database (async pool)
     try:
-        conn = psycopg2.connect(Config.get_db_connection_string())
-        conn.close()
+        db_pool = get_db_pool()
+        if db_pool is None:
+            raise RuntimeError("Database pool not initialized")
+        async with db_pool.acquire() as conn:
+            await conn.fetchval("SELECT 1")
         health_status["checks"]["database"] = "healthy"
     except Exception as e:
         health_status["checks"]["database"] = f"unhealthy: {str(e)}"
         health_status["status"] = "degraded"
     
-    # Check Qdrant
+    # Check Qdrant (async client)
     try:
-        qdrant_client = QdrantClient(
-            url=Config.QDRANT_URL,
-            api_key=Config.QDRANT_API_KEY if Config.QDRANT_API_KEY else None
-        )
-        qdrant_client.get_collections()
+        # Sử dụng async client từ route service nếu có
+        qdrant_client = getattr(route_api_module._route_service_instance, "qdrant_client", None)
+        if qdrant_client is None:
+            # Fallback: tạo temp async client
+            temp_client = AsyncQdrantClient(
+                url=Config.QDRANT_URL,
+                api_key=Config.QDRANT_API_KEY if Config.QDRANT_API_KEY else None
+            )
+            await temp_client.get_collections()
+            await temp_client.close()
+        else:
+            await qdrant_client.get_collections()
         health_status["checks"]["qdrant"] = "healthy"
     except Exception as e:
         health_status["checks"]["qdrant"] = f"unhealthy: {str(e)}"
@@ -113,6 +118,7 @@ async def startup_event():
     # 2. Initialize semantic search service (Qdrant + Embedding Model)
     from services.route_service import SemanticSearchService
     from services.location_service import LocationService
+    from services.poi_service import PoiService
 
     # Lấy pools từ config
     db_pool = get_db_pool()
@@ -130,6 +136,19 @@ async def startup_event():
         redis_client=redis_client
     )
     
+    # Initialize POI service với async resources
+    poi_api_module.poi_service = PoiService(
+        db_pool=db_pool,
+        redis_client=redis_client
+    )
+    
+    # 3. Initialize AsyncQdrantClient và attach vào route service
+    async_qdrant = AsyncQdrantClient(
+        url=Config.QDRANT_URL,
+        api_key=Config.QDRANT_API_KEY if Config.QDRANT_API_KEY else None
+    )
+    route_api_module._route_service_instance.qdrant_client = async_qdrant
+    
     print("=" * 60)
     print("✅ All async services initialized and ready!")
     print("=" * 60)
@@ -138,6 +157,13 @@ async def startup_event():
 async def shutdown_event():
     """Close async resources khi server shutdown"""
     print("🛑 Shutting down async resources...")
+    
+    # Close AsyncQdrantClient
+    qdrant_client = getattr(route_api_module._route_service_instance, "qdrant_client", None)
+    if qdrant_client is not None:
+        await qdrant_client.close()
+        print("✅ Qdrant client closed")
+    
     await close_db_pool()
     await close_redis_client()
     print("✅ Async resources closed")

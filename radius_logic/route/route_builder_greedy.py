@@ -524,6 +524,7 @@ class GreedyRouteBuilder:
                     "poi_type_clean": place.get("poi_type_clean", ""),
                     "main_subcategory": place.get("main_subcategory", ""),
                     "specialization": place.get("specialization", ""),
+                    "category": place.get("category", "Unknown"),  # Include category for update POI
                     "address": place.get("address", ""),
                     "lat": place["lat"],
                     "lon": place["lon"],
