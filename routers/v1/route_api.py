@@ -153,7 +153,21 @@ async def route_search(request: RouteSearchRequest):
 
                 # 1. Xử lý delete_cache nếu được yêu cầu
         if request.delete_cache and request.user_id:
-            await get_semantic_service().cache_service.delete_user_cache(request.user_id)
+            deleted = await get_semantic_service().cache_service.delete_user_cache(request.user_id)
+            if deleted:
+                return {
+                    "status": "success",
+                    "message": f"Cache deleted successfully for user {request.user_id}",
+                    "user_id": str(request.user_id),
+                    "cache_deleted": True
+                }
+            else:
+                return {
+                    "status": "success",
+                    "message": f"No cache found or failed to delete cache for user {request.user_id}",
+                    "user_id": str(request.user_id),
+                    "cache_deleted": False
+                }
         
         # 2. Xử lý replace_route nếu được yêu cầu
         if request.replace_route is not None and request.user_id:
