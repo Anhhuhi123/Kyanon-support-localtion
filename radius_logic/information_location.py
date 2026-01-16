@@ -8,6 +8,7 @@ import redis.asyncio as aioredis
 import json
 from typing import List, Dict, Any, Optional
 from config.config import Config
+import uuid
 
 class LocationInfoService:
     """Service để query thông tin location từ database với async pool và Redis caching"""
@@ -103,6 +104,14 @@ class LocationInfoService:
         Returns:
             Dict chứa thông tin location hoặc None nếu không tìm thấy
         """
+
+        # Validate UUID format 
+        try:
+            uuid.UUID(str(location_id))
+        except (ValueError, TypeError):
+            print(f"Invalid UUID format: {location_id}")
+            return None
+
         # Check cache trước
         cache_key = self._get_cache_key(location_id)
         cached = await self._get_from_cache(cache_key)
@@ -169,9 +178,22 @@ class LocationInfoService:
         """
         if not location_ids:
             return {}
+
+                # Validate và filter invalid UUIDs trước khi query
+        valid_ids = []
+        for lid in location_ids:
+            try:
+                uuid.UUID(str(lid))
+                valid_ids.append(lid)
+            except ValueError:
+                print(f"Invalid UUID format: {lid}")
+                continue
+        
+        if not valid_ids:
+            return {}
         
         # Bước 1: Check cache cho tất cả IDs (batch get async)
-        cache_keys = [self._get_cache_key(lid) for lid in location_ids]
+        cache_keys = [self._get_cache_key(lid) for lid in valid_ids]
         cached_results = await self._get_many_from_cache(cache_keys)
         
         # Bước 2: Tìm IDs chưa có trong cache
