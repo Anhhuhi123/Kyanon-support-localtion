@@ -358,7 +358,7 @@ class SemanticSearchService:
                     
                     # Format opening hours cho ngày arrival
                     open_hours = TimeUtils.normalize_open_hours(poi.get('open_hours'))
-                    opening_hours_today = TimeUtils.get_opening_hours_for_date(open_hours, arrival_time)
+                    opening_hours_today = TimeUtils.get_opening_hours_for_day(open_hours, arrival_time)
                     formatted_poi['opening_hours_today'] = opening_hours_today
                 
                 formatted_candidates.append(formatted_poi)
