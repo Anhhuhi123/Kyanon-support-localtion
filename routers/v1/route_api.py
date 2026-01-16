@@ -7,7 +7,7 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 from fastapi import APIRouter, HTTPException
 from services.route_service import SemanticSearchService
-from pydantics.route import SemanticSearchRequest, CombinedSearchRequest, RouteSearchRequest, ReplaceRouteRequest
+from pydantics.route import SemanticSearchRequest, CombinedSearchRequest, RouteSearchRequest
 
 # Initialize router
 router = APIRouter(prefix="/api/v1/route", tags=["Route Search (Qdrant)"])
