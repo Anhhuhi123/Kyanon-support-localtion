@@ -13,12 +13,10 @@ class RouteConfig:
     # Tốc độ di chuyển theo phương tiện (km/h)
     TRANSPORTATION_SPEEDS = {
         "WALKING": 5,
-        "BICYCLING": 15,
-        "TRANSIT": 25,
-        "FLEXIBLE": 30,
-        "DRIVING": 40
+        "BIKE": 15,
+        "CAR": 25,
+        "FLEXIBLE": 30
     }
-    
     # Food categories cần kiểm tra 3 level
     FOOD_CATEGORIES = ["Restaurant", "Bar", "Cafe & Bakery"]
     
