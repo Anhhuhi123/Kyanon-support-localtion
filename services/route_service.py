@@ -529,4 +529,124 @@ class SemanticSearchService:
             return {
                 "status": "error",
                 "error": str(e)
+            }    
+    async def replace_route(
+        self,
+        user_id: UUID,
+        route_id_to_replace: int,
+        latitude: float,
+        longitude: float,
+        transportation_mode: str,
+        semantic_query: str,
+        max_time_minutes: int = 180,
+        target_places: int = 5,
+        top_k_semantic: int = 10,
+        customer_like: bool = False,
+        current_datetime: Optional[datetime] = None
+    ) -> Dict[str, Any]:
+        """
+        Replace route: Xây dựng route mới với ID = route_id_to_replace + 1, 
+        xoá route cũ, chỉ lưu route mới (tiết kiệm bộ nhớ)
+        
+        Args:
+            user_id: UUID của user
+            route_id_to_replace: ID của route cần replace (1, 2, 3, ...)
+            latitude, longitude: Tọa độ user
+            transportation_mode: Phương tiện di chuyển
+            semantic_query: Query ngữ nghĩa
+            max_time_minutes: Thời gian tối đa (phút)
+            target_places: Số địa điểm mỗi lộ trình
+            top_k_semantic: Số địa điểm từ semantic search
+            customer_like: Tự động thêm Entertainment nếu True
+            current_datetime: Thời điểm hiện tại để validate opening hours
+            
+        Returns:
+            Dict chứa route mới đã được xây dựng
+        """
+        try:
+            # 1. Lấy cache hiện tại để kiểm tra
+            all_routes_metadata = await self.cache_service.get_route_metadata(user_id)
+            
+            if not all_routes_metadata:
+                return {
+                    "status": "error",
+                    "error": f"No cache found for user {user_id}. Please build routes first."
+                }
+            
+            # 2. Kiểm tra route_id_to_replace có tồn tại không
+            route_key = str(route_id_to_replace)
+            if route_key not in all_routes_metadata.get('routes', {}):
+                return {
+                    "status": "error",
+                    "error": f"Route '{route_id_to_replace}' not found. Available routes: {list(all_routes_metadata.get('routes', {}).keys())}"
+                }
+            
+            print(f"🔄 Replace route {route_id_to_replace}: Building route {route_id_to_replace + 1}")
+            
+            # 3. Build routes lại với max_routes = route_id_to_replace + 1
+            new_route_id = route_id_to_replace + 1
+            
+            result = await self.route_service.build_routes(
+                latitude=latitude,
+                longitude=longitude,
+                transportation_mode=transportation_mode,
+                semantic_query=semantic_query,
+                user_id=user_id,
+                max_time_minutes=max_time_minutes,
+                target_places=target_places,
+                max_routes=new_route_id,  # Cộng thêm 1 để có route mới
+                top_k_semantic=top_k_semantic,
+                customer_like=customer_like,
+                current_datetime=current_datetime
+            )
+            
+            if result["status"] == "error":
+                return result
+            
+            # 4. Lấy route cuối cùng (route_id = new_route_id)
+            routes = result.get("routes", [])
+            if len(routes) < new_route_id:
+                return {
+                    "status": "error",
+                    "error": f"Failed to build route {new_route_id}. Only {len(routes)} routes built."
+                }
+            
+            new_route = routes[new_route_id - 1]  # routes là array 0-indexed
+            
+            # 5. Lấy cache mới từ Redis (đã được update bởi build_routes)
+            updated_cache = await self.cache_service.get_route_metadata(user_id)
+            
+            # 6. Xoá route cũ, chỉ giữ route mới (tiết kiệm bộ nhớ)
+            new_cache_data = updated_cache.copy()
+            new_cache_data['routes'] = {
+                str(new_route_id): updated_cache['routes'][str(new_route_id)]
+            }
+            
+            # 7. Lưu cache mới
+            if self.redis_client:
+                import json
+                cache_key = f"route_metadata:{user_id}"
+                await self.redis_client.setex(
+                    cache_key,
+                    3600,
+                    json.dumps(new_cache_data)
+                )
+            
+            print(f"✅ Replace complete: Route {route_id_to_replace} đã xoá, chỉ lưu route {new_route_id}")
+            
+            return {
+                "status": "success",
+                "message": f"Route {route_id_to_replace} replaced with route {new_route_id}",
+                "old_route_id": route_id_to_replace,
+                "new_route_id": new_route_id,
+                "routes": [new_route]
+            }
+            
+        except Exception as e:
+            import traceback
+            print(f"❌ Error in replace_route: {str(e)}")
+            print(traceback.format_exc())
+            return {
+                "status": "error",
+                "error": str(e)
             }

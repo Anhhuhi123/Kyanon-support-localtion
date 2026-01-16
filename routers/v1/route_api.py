@@ -93,12 +93,91 @@ async def combined_search(request: CombinedSearchRequest):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
+# @router.post("/routes")
+# async def route_search(request: RouteSearchRequest):
+#     """
+#     Tìm kiếm và xây dựng lộ trình tối ưu
+    
+#     Workflow:
+#     1. Spatial search (PostGIS) → Tìm tất cả địa điểm gần (>= 50)
+#     2. Semantic search (Qdrant) → Top 10 địa điểm phù hợp nhất với nhu cầu
+#     3. Route building (Greedy) → Xây dựng tối đa 3 lộ trình tốt nhất
+    
+#     Args:
+#         latitude: Vĩ độ user
+#         longitude: Kinh độ user
+#         transportation_mode: Phương tiện di chuyển
+#         semantic_query: Query ngữ nghĩa (nhu cầu người dùng)
+#         max_time_minutes: Thời gian tối đa (phút) - mặc định 180
+#         target_places: Số địa điểm mỗi lộ trình - mặc định 5
+#         max_routes: Số lộ trình tối đa - mặc định 3
+#         top_k_semantic: Số địa điểm từ semantic search - mặc định 10
+    
+#     Returns:
+#         JSON response với tối đa 3 lộ trình tốt nhất
+        
+#     Example Response:
+#         {
+#             "status": "success",
+#             "routes": [
+#                 {
+#                     "route_id": 1,
+#                     "total_time_minutes": 210,
+#                     "travel_time_minutes": 45,
+#                     "stay_time_minutes": 165,
+#                     "total_score": 4.5,
+#                     "avg_score": 0.9,
+#                     "efficiency": 2.14,
+#                     "places": [
+#                         {
+#                             "place_id": "A1",
+#                             "place_name": "Cafe A",
+#                             "poi_type": "cafe",
+#                             "address": "...",
+#                             "lat": 10.77,
+#                             "lon": 106.70,
+#                             "score": 0.92,
+#                             "travel_time_minutes": 10,
+#                             "stay_time_minutes": 30
+#                         }
+#                     ]
+#                 }
+#             ]
+#         }
+#     """
+#     try:
+#         result = await get_semantic_service().build_routes(
+#             latitude=request.latitude,
+#             longitude=request.longitude,
+#             transportation_mode=request.transportation_mode,
+#             semantic_query=request.semantic_query,
+#             user_id = request.user_id,
+#             max_time_minutes=request.max_time_minutes,
+#             target_places=request.target_places,
+#             max_routes=request.max_routes,
+#             top_k_semantic=request.top_k_semantic,
+#             customer_like=request.customer_like or False,
+#             current_datetime=request.current_time
+#         )
+        
+#         if result["status"] == "error":
+#             raise HTTPException(status_code=400, detail=result.get("error", "Unknown error"))
+        
+#         return result
+        
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
 @router.post("/routes")
 async def route_search(request: RouteSearchRequest):
     """
     Tìm kiếm và xây dựng lộ trình tối ưu
     
     Workflow:
+    1. Nếu replace_route được set: Check cache và replace route
+    2. Nếu delete_cache = True: Xóa cache trước khi build
     1. Spatial search (PostGIS) → Tìm tất cả địa điểm gần (>= 50)
     2. Semantic search (Qdrant) → Top 10 địa điểm phù hợp nhất với nhu cầu
     3. Route building (Greedy) → Xây dựng tối đa 3 lộ trình tốt nhất
@@ -112,6 +191,8 @@ async def route_search(request: RouteSearchRequest):
         target_places: Số địa điểm mỗi lộ trình - mặc định 5
         max_routes: Số lộ trình tối đa - mặc định 3
         top_k_semantic: Số địa điểm từ semantic search - mặc định 10
+        replace_route: Route ID cần replace (optional)
+        delete_cache: Xóa cache trước khi build (optional)
     
     Returns:
         JSON response với tối đa 3 lộ trình tốt nhất
@@ -146,12 +227,40 @@ async def route_search(request: RouteSearchRequest):
         }
     """
     try:
+        # 1. Xử lý delete_cache nếu được yêu cầu - xoá cache và build lại từ đầu
+        if request.delete_cache and request.user_id:
+            deleted = await get_semantic_service().cache_service.delete_user_cache(request.user_id)
+            print(f"🗑️ Cache deleted for user {request.user_id}: {deleted}")
+            # Continue to build routes từ đầu
+        
+        # 2. Xử lý replace_route nếu được yêu cầu
+        if request.replace_route is not None and request.user_id:
+            result = await get_semantic_service().replace_route(
+                user_id=request.user_id,
+                route_id_to_replace=request.replace_route,
+                latitude=request.latitude,
+                longitude=request.longitude,
+                transportation_mode=request.transportation_mode,
+                semantic_query=request.semantic_query,
+                max_time_minutes=request.max_time_minutes,
+                target_places=request.target_places,
+                top_k_semantic=request.top_k_semantic,
+                customer_like=request.customer_like or False,
+                current_datetime=request.current_time
+            )
+            
+            if result["status"] == "error":
+                raise HTTPException(status_code=400, detail=result.get("error", "Unknown error"))
+            
+            return result
+        
+        # 3. Build routes bình thường
         result = await get_semantic_service().build_routes(
             latitude=request.latitude,
             longitude=request.longitude,
             transportation_mode=request.transportation_mode,
             semantic_query=request.semantic_query,
-            user_id = request.user_id,
+            user_id=request.user_id,
             max_time_minutes=request.max_time_minutes,
             target_places=request.target_places,
             max_routes=request.max_routes,

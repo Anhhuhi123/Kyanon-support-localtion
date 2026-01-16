@@ -34,6 +34,9 @@ class RouteSearchRequest(BaseModel):
     target_places: Optional[int] = Field(5, description="Số địa điểm mỗi lộ trình", json_schema_extra={"example": 5})
     max_routes: Optional[int] = Field(3, description="Số lộ trình tối đa", json_schema_extra={"example": 1})
     top_k_semantic: Optional[int] = Field(10, description="Số địa điểm từ semantic search", json_schema_extra={"example": 10})
+    replace_route: Optional[int] = Field(None, description="Route ID cần replace. Nếu set, sẽ tạo route mới với POI IDs khác và xóa route cũ", json_schema_extra={"example": 1})
+    delete_cache: Optional[bool] = Field(False, description="Xóa cache của user trước khi build routes mới", json_schema_extra={"example": False})
+
 
 
 class UpdatePOIRequest(BaseModel):
