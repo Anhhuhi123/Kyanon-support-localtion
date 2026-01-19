@@ -79,21 +79,20 @@ async def sync_pois(payload: PoiRequest) -> dict:
     update_ids = [str(i) for i in (payload.update or [])]
     delete_ids = [str(i) for i in (payload.delete or [])]
     try: 
-        max_total_reviews = await poi_service.get_max_total_reviews() 
+        max_total_reviews = await poi_service.get_max_total_reviews()
+        result: dict = {}
+
         if add_ids:
-            result_add = await poi_service.add_new_poi(add_ids,max_total_reviews)
-            return result_add
-        # if update_ids:
-        #     result_update = await poi_service.update_existing_poi(update_ids) # Bằng làm dựa theo cái add_new_poi
-        # if delete_ids:
-        #     result_delete = await poi_service.delete_poi(delete_ids) # Bằng làm 
-        # service lấy ra lại từ những id mà đc gửi vô -> sinh ra -> update 
-        # trich qdrant - Quốc Anh làm
-        # return {
-        #     "inserted": result_add.get("inserted", 0) if add_ids else 0,
-        #     "updated": result_update.get("updated", 0) if update_ids else 0,
-        #     "deleted": result_delete.get("deleted", 0) if delete_ids else 0,
-        # }
+            result["add"] = await poi_service.add_new_poi(add_ids, max_total_reviews)
+        if update_ids:
+            result["update"] = await poi_service.update_existing_poi(update_ids, max_total_reviews)
+        if delete_ids:
+            result["delete"] = await poi_service.delete_poi(delete_ids)
+
+        if not result:
+            return {"message": "No POI IDs provided"}
+
+        return result
     except HTTPException:
         raise
     except Exception as e:
