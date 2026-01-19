@@ -4,7 +4,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'
 
 from fastapi import APIRouter, HTTPException
 from pydantics.user import UserIdRequest 
-from pydantics.poi import ConfirmReplaceRequest
+from pydantics.poi import ConfirmReplaceRequest, PoiRequest
 from services.poi_service import PoiService
 
 router = APIRouter(prefix="/api/v1/poi", tags=["Poi"])
@@ -63,6 +63,37 @@ async def confirm_replace_poi(req: ConfirmReplaceRequest):
         
         return result
         
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@router.post("/sync_pois")
+async def sync_pois(payload: PoiRequest) -> dict:
+
+    if poi_service is None:
+        raise HTTPException(status_code=500, detail="POI service not initialized")
+
+    add_ids = [str(i) for i in (payload.add or [])]
+    update_ids = [str(i) for i in (payload.update or [])]
+    delete_ids = [str(i) for i in (payload.delete or [])]
+    try: 
+        max_total_reviews = await poi_service.get_max_total_reviews() 
+        if add_ids:
+            result_add = await poi_service.add_new_poi(add_ids,max_total_reviews)
+            return result_add
+        # if update_ids:
+        #     result_update = await poi_service.update_existing_poi(update_ids) # Bằng làm dựa theo cái add_new_poi
+        # if delete_ids:
+        #     result_delete = await poi_service.delete_poi(delete_ids) # Bằng làm 
+        # service lấy ra lại từ những id mà đc gửi vô -> sinh ra -> update 
+        # trich qdrant - Quốc Anh làm
+        # return {
+        #     "inserted": result_add.get("inserted", 0) if add_ids else 0,
+        #     "updated": result_update.get("updated", 0) if update_ids else 0,
+        #     "deleted": result_delete.get("deleted", 0) if delete_ids else 0,
+        # }
     except HTTPException:
         raise
     except Exception as e:
