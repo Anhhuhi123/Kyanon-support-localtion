@@ -39,7 +39,8 @@ class PoiService:
                 )
                 
                 if not itinerary:
-                    raise HTTPException(status_code=404, detail="Itinerary not found")
+                    # User chưa có itinerary → return empty list thay vì raise exception
+                    return []
 
                 itinerary_id = itinerary["id"]
 
