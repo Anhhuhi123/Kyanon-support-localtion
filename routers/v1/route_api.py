@@ -154,6 +154,13 @@ async def route_search(request: RouteSearchRequest):
             deleted = await get_semantic_service().cache_service.delete_user_cache(request.user_id)
             print(f"🗑️ Cache deleted for user {request.user_id}: {deleted}")
             # Continue to build routes từ đầu
+
+         # Xác định target_places theo mode duration
+        effective_target_places = request.target_places
+        if getattr(request, "duration", False):
+            # Cho phép thuật toán chọn số điểm phù hợp trong max_time_minutes
+            # mà không bị giới hạn cứng bởi target_places
+            effective_target_places = 50  # số đủ lớn, vẫn dùng chung logic build_routes    
         
         # 2. Xử lý replace_route nếu được yêu cầu
         if request.replace_route is not None and request.user_id:
@@ -165,7 +172,7 @@ async def route_search(request: RouteSearchRequest):
                 transportation_mode=request.transportation_mode,
                 semantic_query=request.semantic_query,
                 max_time_minutes=request.max_time_minutes,
-                target_places=request.target_places,
+                target_places=effective_target_places,
                 top_k_semantic=request.top_k_semantic,
                 customer_like=request.customer_like or False,
                 current_datetime=request.current_time
@@ -184,7 +191,7 @@ async def route_search(request: RouteSearchRequest):
             semantic_query=request.semantic_query,
             user_id=request.user_id,
             max_time_minutes=request.max_time_minutes,
-            target_places=request.target_places,
+            target_places=effective_target_places,
             max_routes=request.max_routes,
             top_k_semantic=request.top_k_semantic,
             customer_like=request.customer_like or False,
