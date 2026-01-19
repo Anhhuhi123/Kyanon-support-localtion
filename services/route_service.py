@@ -24,7 +24,8 @@ class SemanticSearchService:
     Delegate tất cả logic tới các service chuyên biệt
     """
     
-    def __init__(self, db_pool: asyncpg.Pool = None, redis_client: aioredis.Redis = None, process_pool: ProcessPoolExecutor = None):
+    def __init__(self, db_pool: asyncpg.Pool = None, redis_client: aioredis.Redis = None, 
+                 process_pool: ProcessPoolExecutor = None, vector_store=None, embedder=None):
         """
         Khởi tạo facade service với async resources
         
@@ -32,11 +33,13 @@ class SemanticSearchService:
             db_pool: Async PostgreSQL connection pool
             redis_client: Async Redis client
             process_pool: ProcessPoolExecutor for CPU-bound tasks (route building)
+            vector_store: Shared QdrantVectorStore instance (với AsyncQdrantClient)
+            embedder: Shared EmbeddingGenerator instance
         """
-        # Khởi tạo base service trước (tạo singleton instances lần đầu)
-        self.base_service = SemanticSearchBase(db_pool, redis_client)
+        # Khởi tạo base service với shared vector_store & embedder
+        self.base_service = SemanticSearchBase(db_pool, redis_client, vector_store, embedder)
         
-        # Share singleton instances với các service con để tránh load lại
+        # Get singleton instances từ base service
         vector_store = self.base_service.vector_store
         embedder = self.base_service.embedder
         

@@ -2,40 +2,45 @@ import uuid
 import time
 import numpy as np
 from config.config import Config
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient
 from typing import List, Tuple, Optional
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, HasIdCondition
 
 class QdrantVectorStore:
-    """Qdrant-based vector store for similarity search"""
+    """Qdrant-based vector store for similarity search (Async)"""
     
-    def __init__(self):
-        """Initialize Qdrant vector store"""
+    def __init__(self, client: Optional[AsyncQdrantClient] = None):
+        """Initialize Qdrant vector store with async client
+        
+        Args:
+            client: AsyncQdrantClient instance (required for async operations)
+        """
         self.dimension = Config.VECTOR_DIMENSION
         self.collection_name = Config.QDRANT_COLLECTION_NAME
-        self.client = None
-        self.collection_points_count = 0  # Cache để tránh get_collection mỗi lần search
+        self.client = client  # Expect AsyncQdrantClient injected
+        self.collection_points_count = 0
+        self.texts = []
         
-        # Initialize Qdrant client
-        self._initialize_client()
-        
-    def _initialize_client(self):
-        """Initialize Qdrant client and create collection if needed"""
+    async def initialize_async(self):
+        """Initialize collection and check if it exists (async)"""
         try:
+            if self.client is None:
+                print("⚠️ AsyncQdrantClient not injected, creating new instance...")
+                self.client = AsyncQdrantClient(
+                    url=Config.QDRANT_URL,
+                    api_key=Config.QDRANT_API_KEY if Config.QDRANT_API_KEY else None,
+                    timeout=60
+                )
+            
             print(f"Connecting to Qdrant at {Config.QDRANT_URL}...")
-            self.client = QdrantClient(
-                url=Config.QDRANT_URL,
-                api_key=Config.QDRANT_API_KEY,
-                timeout=60
-            )
             
             # Check if collection exists, create if not
-            collections = self.client.get_collections().collections
-            collection_names = [c.name for c in collections]
+            collections = await self.client.get_collections()
+            collection_names = [c.name for c in collections.collections]
             
             if self.collection_name not in collection_names:
                 print(f"Creating collection '{self.collection_name}'...")
-                self.client.create_collection(
+                await self.client.create_collection(
                     collection_name=self.collection_name,
                     vectors_config=VectorParams(
                         size=self.dimension,
@@ -47,7 +52,7 @@ class QdrantVectorStore:
             else:
                 print(f"✓ Using existing collection '{self.collection_name}'")
                 # Cache points_count để tránh gọi get_collection mỗi lần search
-                collection_info = self.client.get_collection(collection_name=self.collection_name)
+                collection_info = await self.client.get_collection(collection_name=self.collection_name)
                 self.collection_points_count = collection_info.points_count
                 
         except Exception as e:
@@ -161,16 +166,14 @@ class QdrantVectorStore:
             raise
     
 
-    def search(self, query_embedding: np.ndarray, k: int = Config.TOP_K_RESULTS, query_filter=None):
+    async def search(self, query_embedding: np.ndarray, k: int = Config.TOP_K_RESULTS, query_filter=None):
         """
-        Search for similar embeddings in Qdrant (Light RAG optimized)
+        Search for similar embeddings in Qdrant (Async, Light RAG optimized)
         
         Args:
             query_embedding: query embedding vector
             k: number of top results to return
             query_filter: optional Qdrant filter to apply
-            with_payload: False = chỉ lấy id+score (nhanh hơn)
-            hnsw_ef: HNSW search param (16-64: nhanh, 128-256: chính xác)
             
         Returns:
             list of search results (ScoredPoint objects)
@@ -183,9 +186,8 @@ class QdrantVectorStore:
             # Convert to list for Qdrant
             query_vector = query_embedding.astype('float32').tolist()
                         
-            # Search in Qdrant với hoặc không có filter
-            # Light RAG: with_payload=False + hnsw_ef tuning để tăng tốc
-            search_results = self.client.search(
+            # Search in Qdrant với hoặc không có filter (async)
+            search_results = await self.client.search(
                 collection_name=self.collection_name,
                 query_vector=query_vector,
                 limit=k,
@@ -208,10 +210,10 @@ class QdrantVectorStore:
             print(f"Error searching in Qdrant: {e}")
             return []
     
-    def search_by_ids(self, query_embedding: np.ndarray, point_ids: List[str], k: int = Config.TOP_K_RESULTS, 
+    async def search_by_ids(self, query_embedding: np.ndarray, point_ids: List[str], k: int = Config.TOP_K_RESULTS, 
                       with_payload: bool = False, hnsw_ef: int = 32):
         """
-        Search for similar embeddings trong danh sách point IDs cụ thể (Light RAG optimized)
+        Search for similar embeddings trong danh sách point IDs cụ thể (Async, Light RAG optimized)
         
         Args:
             query_embedding: query embedding vector
@@ -237,8 +239,8 @@ class QdrantVectorStore:
                 ]
             )
             
-            # Light RAG: with_payload=False + hnsw_ef tuning để tăng tốc
-            search_results = self.client.search(
+            # Async search với filter
+            search_results = await self.client.search(
                 collection_name=self.collection_name,
                 query_vector=query_vector,
                 query_filter=id_filter,

@@ -81,10 +81,10 @@ class SemanticSearchBase:
             # 2. Tìm kiếm trong Qdrant (không filter)
             print(f"Searching in Qdrant for top {top_k} results...")
             search_start = time.time()
-            search_results = self.vector_store.search(
+            search_results = await self.vector_store.search(
                 query_embedding=query_embedding,
                 k=top_k
-         )
+            )
             search_time = time.time() - search_start
             
             total_time = time.time() - start_time
@@ -190,8 +190,8 @@ class SemanticSearchBase:
             print(f"Searching in Qdrant with filter on {len(id_list)} IDs...")
             search_start = time.time()
             
-            # Qdrant filter với HasIdCondition
-            search_results = self.vector_store.search_by_ids(
+            # Qdrant filter với HasIdCondition (async)
+            search_results = await self.vector_store.search_by_ids(
                 query_embedding=query_embedding,
                 point_ids=id_list,
                 k=top_k,

@@ -115,7 +115,9 @@ async def startup_event():
     await init_db_pool()
     await init_redis_client()
     
-    # 2. Initialize semantic search service (Qdrant + Embedding Model)
+    # 2. Initialize AsyncQdrantClient và QdrantVectorStore
+    from retrieval.qdrant_vector_store import QdrantVectorStore
+    from retrieval.embeddings import EmbeddingGenerator
     from services.route_service import SemanticSearchService
     from services.location_service import LocationService
     from services.poi_service import PoiService
@@ -124,11 +126,29 @@ async def startup_event():
     db_pool = get_db_pool()
     redis_client = get_redis_client()
     
-    # Khởi tạo services với async resources
+    # 3. Khởi tạo AsyncQdrantClient
+    async_qdrant = AsyncQdrantClient(
+        url=Config.QDRANT_URL,
+        api_key=Config.QDRANT_API_KEY if Config.QDRANT_API_KEY else None
+    )
+    
+    # 4. Khởi tạo QdrantVectorStore với AsyncQdrantClient
+    vector_store = QdrantVectorStore(client=async_qdrant)
+    await vector_store.initialize_async()
+    
+    # 5. Khởi tạo EmbeddingGenerator (shared singleton)
+    embedder = EmbeddingGenerator()
+    
+    # 6. Khởi tạo services với async resources + shared vector_store & embedder
     route_api_module._route_service_instance = SemanticSearchService(
         db_pool=db_pool,
-        redis_client=redis_client
+        redis_client=redis_client,
+        vector_store=vector_store,
+        embedder=embedder
     )
+    
+    # Attach async_qdrant cho backward compatibility
+    route_api_module._route_service_instance.qdrant_client = async_qdrant
     
     # Update location service với async resources
     location_api_module.location_service = LocationService(
@@ -144,13 +164,6 @@ async def startup_event():
     
     # Set search_service cho POI API (dùng chung với route service)
     poi_api_module.search_service = route_api_module._route_service_instance
-    
-    # 3. Initialize AsyncQdrantClient và attach vào route service
-    async_qdrant = AsyncQdrantClient(
-        url=Config.QDRANT_URL,
-        api_key=Config.QDRANT_API_KEY if Config.QDRANT_API_KEY else None
-    )
-    route_api_module._route_service_instance.qdrant_client = async_qdrant
     
     print("=" * 60)
     print("✅ All async services initialized and ready!")
