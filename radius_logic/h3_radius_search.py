@@ -142,10 +142,17 @@ class H3RadiusSearch:
             # Fallback: no cache available
             return {idx: None for idx in h3_indices}
         
-        for h3_index in h3_indices:
-            key = self.get_redis_key(h3_index)
-            cached = await self.redis_client.get(key)
-            
+        # Convert Set to List để giữ thứ tự
+        idx_list = list(h3_indices)
+        
+        # Tạo list keys tương ứng với idx_list
+        keys = [self.get_redis_key(idx) for idx in idx_list]
+        
+        # ✅ Sử dụng MGET để batch get tất cả keys cùng lúc
+        cached_values = await self.redis_client.mget(keys)
+        
+        # Parse kết quả
+        for h3_index, cached in zip(idx_list, cached_values):
             if cached is not None:  # Cache hit (kể cả "[]")
                 result[h3_index] = json.loads(cached)
             else:  # Cache miss

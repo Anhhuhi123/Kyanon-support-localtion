@@ -59,13 +59,14 @@ class EmbeddingGenerator:
             print(f"  Generating {len(texts)} embeddings with {Config.EMBEDDING_MODEL}...")
             
             # Generate embeddings in batches
-            embeddings = self.model.encode(
-                processed_texts,
-                batch_size=batch_size,
-                show_progress_bar=show_progress,
-                convert_to_numpy=True,
-                normalize_embeddings=True  # Normalize for cosine similarity
-            )
+            with torch.inference_mode():
+                embeddings = self.model.encode(
+                    processed_texts,
+                    batch_size=batch_size,
+                    show_progress_bar=show_progress,
+                    convert_to_numpy=True,
+                    normalize_embeddings=True  # Normalize for cosine similarity
+                )
             
             print(f"  ✓ Successfully generated {len(embeddings)} embeddings")
             return embeddings
@@ -88,12 +89,13 @@ class EmbeddingGenerator:
             # Use "query:" prefix for queries (E5 model recommendation)
             processed_text = f"query: {text}"
             
-            embedding = self.model.encode(
-                processed_text,
-                convert_to_numpy=True,
-                normalize_embeddings=True
-            )
-            
+            with torch.inference_mode():
+                embedding = self.model.encode(
+                    processed_text,
+                    convert_to_numpy=True,
+                    normalize_embeddings=True
+                )
+                
             return embedding
             
         except Exception as e:

@@ -6,6 +6,7 @@ Sử dụng Async Connection Pool và Redis Caching để tối ưu hiệu năng
 import asyncpg
 import redis.asyncio as aioredis
 import json
+import uuid
 from typing import List, Dict, Any, Optional
 from config.config import Config
 
@@ -24,7 +25,16 @@ class LocationInfoService:
         self.db_pool = db_pool
         self.redis_client = redis_client
         self.cache_ttl = cache_ttl or Config.REDIS_CACHE_TTL
-    
+
+    @staticmethod
+    def _is_valid_uuid(location_id: str) -> bool:
+        """Validate UUID format"""
+        try:
+            uuid.UUID(str(location_id))
+            return True
+        except (ValueError, TypeError):
+            return False
+
     def _get_cache_key(self, location_id: str) -> str:
         """Tạo cache key cho location"""
         return f"location:{location_id}"
@@ -35,7 +45,7 @@ class LocationInfoService:
             return None
         try:
             cached = await self.redis_client.get(cache_key)
-            if cached:
+            if cached is not None:
                 return json.loads(cached)
         except Exception as e:
             print(f"Cache read error: {e}")
@@ -103,11 +113,18 @@ class LocationInfoService:
         Returns:
             Dict chứa thông tin location hoặc None nếu không tìm thấy
         """
+
+        # Validate UUID trước khi xử lý
+        if not self._is_valid_uuid(location_id):
+            return None
+
         # Check cache trước
         cache_key = self._get_cache_key(location_id)
         cached = await self._get_from_cache(cache_key)
-        if cached:
-            return cached
+        if cached is not None:  # Check is not None
+            if cached == {}:  # Negative cache hit
+                return None
+            return cached  # Positive cache hit
         
         # Query từ database nếu cache miss
         if not self.db_pool:
@@ -132,6 +149,8 @@ class LocationInfoService:
                 row = await conn.fetchrow(query, location_id)
                 
                 if not row:
+                    # Negative caching: cache empty dict để tránh query lại
+                    await self._set_cache(cache_key, {})
                     return None
                 
                 from utils.time_utils import TimeUtils
@@ -172,13 +191,19 @@ class LocationInfoService:
         """
         if not location_ids:
             return {}
+
+        # Validate và filter chỉ lấy valid UUIDs
+        valid_ids = [lid for lid in location_ids if self._is_valid_uuid(lid)]
+        
+        if not valid_ids:
+            return {}
         
         # Bước 1: Check cache cho tất cả IDs (batch get async)
-        cache_keys = [self._get_cache_key(lid) for lid in location_ids]
+        cache_keys = [self._get_cache_key(lid) for lid in valid_ids]
         cached_results = await self._get_many_from_cache(cache_keys)
         
         # Bước 2: Tìm IDs chưa có trong cache
-        missing_ids = [lid for lid in location_ids if lid not in cached_results]
+        missing_ids = [lid for lid in valid_ids if lid not in cached_results]
         
         # Nếu tất cả đều có trong cache, return luôn
         if not missing_ids:
@@ -229,12 +254,20 @@ class LocationInfoService:
                         "open_hours": TimeUtils.normalize_open_hours(row['open_hours'])
                     }
                 
-                # Bước 5: Cache kết quả mới (batch set async)
-                if db_results:
-                    await self._set_many_cache(db_results)
+                # Bước 5: Negative caching cho các IDs không tìm thấy
+                found_ids = set(db_results.keys())
+                not_found_ids = [lid for lid in missing_ids if lid not in found_ids]
+                negative_cache_data = {lid: {} for lid in not_found_ids}
                 
-                # Bước 6: Merge cached + DB results
-                final_results = {**cached_results, **db_results}
+                # Cache cả positive và negative results
+                all_cache_data = {**db_results, **negative_cache_data}
+                if all_cache_data:
+                    await self._set_many_cache(all_cache_data)  
+                
+                # Bước 6: Merge cached + DB results (filter out negative cache)
+                # Chỉ merge positive cache và DB results
+                positive_cached = {k: v for k, v in cached_results.items() if v != {}}
+                final_results = {**positive_cached, **db_results}
             
                 return final_results
                 
