@@ -79,6 +79,8 @@ class GreedyRouteBuilder:
             # Xác định có cần chèn Restaurant cho meal time không
             should_insert_restaurant_for_meal = False
             meal_windows = None
+            need_lunch_restaurant = False
+            need_dinner_restaurant = False
             
             if not has_cafe and has_restaurant:
                 # Không có Cafe nhưng có Restaurant → Chắc chắn do overlap meal time
@@ -86,11 +88,23 @@ class GreedyRouteBuilder:
                     meal_check = TimeUtils.check_overlap_with_meal_times(current_datetime, max_time_minutes)
                     if meal_check["needs_restaurant"]:
                         should_insert_restaurant_for_meal = True
+                        lunch_overlap = meal_check['lunch_overlap_minutes'] >= 60
+                        dinner_overlap = meal_check['dinner_overlap_minutes'] >= 60
+                        
+                        need_lunch_restaurant = lunch_overlap
+                        need_dinner_restaurant = dinner_overlap
+                        
+                        if lunch_overlap and dinner_overlap:
+                            print(f"🍽️  Overlap cả lunch ({meal_check['lunch_overlap_minutes']}m) và dinner ({meal_check['dinner_overlap_minutes']}m) → Chèn 1 Restaurant cho mỗi meal")
+                        elif lunch_overlap:
+                            print(f"🍽️  Overlap lunch ({meal_check['lunch_overlap_minutes']}m) → Chèn 1 Restaurant cho lunch")
+                        elif dinner_overlap:
+                            print(f"🍽️  Overlap dinner ({meal_check['dinner_overlap_minutes']}m) → Chèn 1 Restaurant cho dinner")
+                        
                         meal_windows = {
                             "lunch": meal_check.get("lunch_window"),
                             "dinner": meal_check.get("dinner_window")
                         }
-                        print(f"🍽️  Không có Cafe & Bakery nhưng có Restaurant → Chèn ĐÚNG 1 Restaurant vào meal time")
             
             # 2. Chọn điểm đầu tiên
             route = []
@@ -164,10 +178,30 @@ class GreedyRouteBuilder:
                 category_sequence.append(places[best_first].get('category'))
             
             # ⚠️ KIỂM TRA: Nếu POI đầu tiên là Restaurant và đang trong chế độ meal → Đánh dấu đã chèn
-            restaurant_inserted_for_meal = False
+            lunch_restaurant_inserted = False
+            dinner_restaurant_inserted = False
+            
             if should_insert_restaurant_for_meal and places[best_first].get('category') == 'Restaurant':
-                restaurant_inserted_for_meal = True
-                print(f"✅ POI đầu đã là Restaurant → Không chọn Restaurant nữa cho các POI sau")
+                # Xác định POI đầu nằm trong meal nào
+                if current_datetime:
+                    travel_time = self.calculator.calculate_travel_time(
+                        distance_matrix[0][best_first + 1],
+                        transportation_mode
+                    )
+                    arrival_first = TimeUtils.get_arrival_time(current_datetime, travel_time)
+                    
+                    if meal_windows:
+                        if meal_windows.get('lunch'):
+                            lunch_start, lunch_end = meal_windows['lunch']
+                            if lunch_start <= arrival_first <= lunch_end:
+                                lunch_restaurant_inserted = True
+                                print(f"✅ POI đầu là Restaurant trong lunch window → Lunch đã có restaurant")
+                        
+                        if meal_windows.get('dinner'):
+                            dinner_start, dinner_end = meal_windows['dinner']
+                            if dinner_start <= arrival_first <= dinner_end:
+                                dinner_restaurant_inserted = True
+                                print(f"✅ POI đầu là Restaurant trong dinner window → Dinner đã có restaurant")
             
             # target_places là số POI cần đi (không tính user)
             # Đã có 1 POI đầu, cần chọn (target_places - 2) POI giữa, và 1 POI cuối
@@ -182,16 +216,23 @@ class GreedyRouteBuilder:
                     arrival_at_next = current_datetime + timedelta(minutes=total_travel_time + total_stay_time)
                 
                 should_prioritize_restaurant = False
-                if meal_windows and arrival_at_next and not restaurant_inserted_for_meal:
-                    # Kiểm tra xem arrival time có nằm trong meal window không
-                    for meal_type, window in meal_windows.items():
-                        if window:
-                            meal_start, meal_end = window
-                            # Nếu đến trong khoảng meal time, ưu tiên Restaurant
-                            if meal_start <= arrival_at_next <= meal_end:
-                                should_prioritize_restaurant = True
-                                print(f"🍽️  Ưu tiên Restaurant vì đến lúc {arrival_at_next.strftime('%H:%M')} (trong {meal_type} window)")
-                                break
+                target_meal_type = None  # 'lunch' hoặc 'dinner'
+                
+                if meal_windows and arrival_at_next:
+                    # Kiểm tra xem arrival time nằm trong meal nào và meal đó chưa có restaurant
+                    if meal_windows.get('lunch') and need_lunch_restaurant and not lunch_restaurant_inserted:
+                        lunch_start, lunch_end = meal_windows['lunch']
+                        if lunch_start <= arrival_at_next <= lunch_end:
+                            should_prioritize_restaurant = True
+                            target_meal_type = 'lunch'
+                            print(f"🍽️  Ưu tiên Restaurant cho lunch vì đến lúc {arrival_at_next.strftime('%H:%M')} (trong lunch window)")
+                    
+                    if not should_prioritize_restaurant and meal_windows.get('dinner') and need_dinner_restaurant and not dinner_restaurant_inserted:
+                        dinner_start, dinner_end = meal_windows['dinner']
+                        if dinner_start <= arrival_at_next <= dinner_end:
+                            should_prioritize_restaurant = True
+                            target_meal_type = 'dinner'
+                            print(f"🍽️  Ưu tiên Restaurant cho dinner vì đến lúc {arrival_at_next.strftime('%H:%M')} (trong dinner window)")
                 
                 # Xác định category BẮT BUỘC cho POI tiếp theo
                 required_category = None
@@ -204,11 +245,15 @@ class GreedyRouteBuilder:
                     has_restaurant_available = any(p.get('category') == 'Restaurant' and i not in visited for i, p in enumerate(places))
                     if has_restaurant_available:
                         required_category = 'Restaurant'
-                        restaurant_inserted_for_meal = True  # Đánh dấu đã chèn Restaurant
+                        # Đánh dấu đã chèn restaurant cho meal tương ứng
+                        if target_meal_type == 'lunch':
+                            lunch_restaurant_inserted = True
+                        elif target_meal_type == 'dinner':
+                            dinner_restaurant_inserted = True
                         exclude_restaurant = False  # Cho phép chọn Restaurant cho bước này
-                        print(f"   → BẮT BUỘC chọn Restaurant cho bước này (chỉ 1 lần)")
-                # Nếu đã chèn Restaurant cho meal rồi, tiếp tục loại bỏ Restaurant
-                elif should_insert_restaurant_for_meal and restaurant_inserted_for_meal:
+                        print(f"   → BẮT BUỘC chọn Restaurant cho {target_meal_type}")
+                # Nếu đã chèn đủ Restaurant cho cả 2 meal rồi, tiếp tục loại bỏ Restaurant
+                elif should_insert_restaurant_for_meal and lunch_restaurant_inserted and dinner_restaurant_inserted:
                     exclude_restaurant = True
                     print(f"   → Đã chèn Restaurant cho meal, chỉ chọn từ category ban đầu")
                 
@@ -395,11 +440,7 @@ class GreedyRouteBuilder:
                     
                     # 🍽️ Logic lọc Restaurant cho POI cuối
                     if should_insert_restaurant_for_meal and place.get('category') == 'Restaurant':
-                        # Nếu đã chèn Restaurant rồi → Loại bỏ
-                        if restaurant_inserted_for_meal:
-                            continue
-                        
-                        # Nếu chưa chèn Restaurant → Chỉ cho phép nếu arrival time nằm trong meal window
+                        # Kiểm tra xem POI cuối nằm trong meal nào
                         if current_datetime and meal_windows:
                             travel_time_to_last = self.calculator.calculate_travel_time(
                                 distance_matrix[current_pos][i + 1],
@@ -407,17 +448,27 @@ class GreedyRouteBuilder:
                             )
                             arrival_at_last = current_datetime + timedelta(minutes=total_travel_time + total_stay_time + travel_time_to_last)
                             
-                            # Kiểm tra xem có nằm trong meal window không
-                            in_meal_window = False
-                            for meal_type, window in meal_windows.items():
-                                if window:
-                                    meal_start, meal_end = window
-                                    if meal_start <= arrival_at_last <= meal_end:
-                                        in_meal_window = True
-                                        break
+                            # Nếu POI này nằm trong lunch window
+                            in_lunch = False
+                            in_dinner = False
                             
-                            # Nếu KHÔNG nằm trong meal window → Loại bỏ Restaurant
-                            if not in_meal_window:
+                            if meal_windows.get('lunch'):
+                                lunch_start, lunch_end = meal_windows['lunch']
+                                if lunch_start <= arrival_at_last <= lunch_end:
+                                    in_lunch = True
+                            
+                            if meal_windows.get('dinner'):
+                                dinner_start, dinner_end = meal_windows['dinner']
+                                if dinner_start <= arrival_at_last <= dinner_end:
+                                    in_dinner = True
+                            
+                            # Loại bỏ nếu meal đó đã có restaurant
+                            if in_lunch and lunch_restaurant_inserted:
+                                continue
+                            if in_dinner and dinner_restaurant_inserted:
+                                continue
+                            # Loại bỏ nếu không nằm trong bất kỳ meal window nào
+                            if not in_lunch and not in_dinner:
                                 continue
                     
                     # Kiểm tra khoảng cách đến user
@@ -601,17 +652,31 @@ class GreedyRouteBuilder:
         
         should_insert_restaurant_for_meal = False
         meal_windows = None
+        need_lunch_restaurant = False
+        need_dinner_restaurant = False
         
         if not has_cafe and has_restaurant:
             if current_datetime and max_time_minutes:
                 meal_check = TimeUtils.check_overlap_with_meal_times(current_datetime, max_time_minutes)
                 if meal_check["needs_restaurant"]:
                     should_insert_restaurant_for_meal = True
+                    lunch_overlap = meal_check['lunch_overlap_minutes'] >= 60
+                    dinner_overlap = meal_check['dinner_overlap_minutes'] >= 60
+                    
+                    need_lunch_restaurant = lunch_overlap
+                    need_dinner_restaurant = dinner_overlap
+                    
+                    if lunch_overlap and dinner_overlap:
+                        print(f"🍽️  Overlap cả lunch ({meal_check['lunch_overlap_minutes']}m) và dinner ({meal_check['dinner_overlap_minutes']}m) → Chèn 1 Restaurant cho mỗi meal (duration mode)")
+                    elif lunch_overlap:
+                        print(f"🍽️  Overlap lunch ({meal_check['lunch_overlap_minutes']}m) → Chèn 1 Restaurant cho lunch (duration mode)")
+                    elif dinner_overlap:
+                        print(f"🍽️  Overlap dinner ({meal_check['dinner_overlap_minutes']}m) → Chèn 1 Restaurant cho dinner (duration mode)")
+                    
                     meal_windows = {
                         "lunch": meal_check.get("lunch_window"),
                         "dinner": meal_check.get("dinner_window")
                     }
-                    print(f"🍽️  Không có Cafe & Bakery nhưng có Restaurant → Chèn ĐÚNG 1 Restaurant vào meal time")
         
         # 3. Chọn điểm đầu tiên
         route = []
@@ -675,10 +740,30 @@ class GreedyRouteBuilder:
         if 'category' in places[best_first]:
             category_sequence.append(places[best_first].get('category'))
         
-        restaurant_inserted_for_meal = False
+        lunch_restaurant_inserted = False
+        dinner_restaurant_inserted = False
+        
         if should_insert_restaurant_for_meal and places[best_first].get('category') == 'Restaurant':
-            restaurant_inserted_for_meal = True
-            print(f"✅ POI đầu đã là Restaurant → Không chọn Restaurant nữa cho các POI sau")
+            # Xác định POI đầu nằm trong meal nào
+            if current_datetime:
+                travel_time = self.calculator.calculate_travel_time(
+                    distance_matrix[0][best_first + 1],
+                    transportation_mode
+                )
+                arrival_first = TimeUtils.get_arrival_time(current_datetime, travel_time)
+                
+                if meal_windows:
+                    if meal_windows.get('lunch'):
+                        lunch_start, lunch_end = meal_windows['lunch']
+                        if lunch_start <= arrival_first <= lunch_end:
+                            lunch_restaurant_inserted = True
+                            print(f"✅ POI đầu là Restaurant trong lunch window → Lunch đã có restaurant")
+                    
+                    if meal_windows.get('dinner'):
+                        dinner_start, dinner_end = meal_windows['dinner']
+                        if dinner_start <= arrival_first <= dinner_end:
+                            dinner_restaurant_inserted = True
+                            print(f"✅ POI đầu là Restaurant trong dinner window → Dinner đã có restaurant")
         
         # 4. Chọn các điểm giữa - VÒNG LẶP KHÔNG GIỚI HẠN, DỪNG KHI GẦN HẾT THỜI GIAN
         # Ngưỡng để chuyển sang chọn điểm cuối: còn < 30% thời gian
@@ -707,14 +792,23 @@ class GreedyRouteBuilder:
                 arrival_at_next = current_datetime + timedelta(minutes=total_travel_time + total_stay_time)
             
             should_prioritize_restaurant = False
-            if meal_windows and arrival_at_next and not restaurant_inserted_for_meal:
-                for meal_type, window in meal_windows.items():
-                    if window:
-                        meal_start, meal_end = window
-                        if meal_start <= arrival_at_next <= meal_end:
-                            should_prioritize_restaurant = True
-                            print(f"🍽️  Ưu tiên Restaurant vì đến lúc {arrival_at_next.strftime('%H:%M')} (trong {meal_type} window)")
-                            break
+            target_meal_type = None
+            
+            if meal_windows and arrival_at_next:
+                # Kiểm tra xem arrival time nằm trong meal nào và meal đó chưa có restaurant
+                if meal_windows.get('lunch') and need_lunch_restaurant and not lunch_restaurant_inserted:
+                    lunch_start, lunch_end = meal_windows['lunch']
+                    if lunch_start <= arrival_at_next <= lunch_end:
+                        should_prioritize_restaurant = True
+                        target_meal_type = 'lunch'
+                        print(f"🍽️  Ưu tiên Restaurant cho lunch vì đến lúc {arrival_at_next.strftime('%H:%M')} (trong lunch window)")
+                
+                if not should_prioritize_restaurant and meal_windows.get('dinner') and need_dinner_restaurant and not dinner_restaurant_inserted:
+                    dinner_start, dinner_end = meal_windows['dinner']
+                    if dinner_start <= arrival_at_next <= dinner_end:
+                        should_prioritize_restaurant = True
+                        target_meal_type = 'dinner'
+                        print(f"🍽️  Ưu tiên Restaurant cho dinner vì đến lúc {arrival_at_next.strftime('%H:%M')} (trong dinner window)")
             
             # Xác định category bắt buộc
             required_category = None
@@ -724,10 +818,14 @@ class GreedyRouteBuilder:
                 has_restaurant_available = any(p.get('category') == 'Restaurant' and i not in visited for i, p in enumerate(places))
                 if has_restaurant_available:
                     required_category = 'Restaurant'
-                    restaurant_inserted_for_meal = True
+                    # Đánh dấu đã chèn restaurant cho meal tương ứng
+                    if target_meal_type == 'lunch':
+                        lunch_restaurant_inserted = True
+                    elif target_meal_type == 'dinner':
+                        dinner_restaurant_inserted = True
                     exclude_restaurant = False
-                    print(f"   → BẮT BUỘC chọn Restaurant cho bước này (chỉ 1 lần)")
-            elif should_insert_restaurant_for_meal and restaurant_inserted_for_meal:
+                    print(f"   → BẮT BUỘC chọn Restaurant cho {target_meal_type}")
+            elif should_insert_restaurant_for_meal and lunch_restaurant_inserted and dinner_restaurant_inserted:
                 exclude_restaurant = True
                 print(f"   → Đã chèn Restaurant cho meal, chỉ chọn từ category ban đầu")
             
@@ -895,9 +993,7 @@ class GreedyRouteBuilder:
                 
                 # Logic lọc Restaurant cho POI cuối
                 if should_insert_restaurant_for_meal and place.get('category') == 'Restaurant':
-                    if restaurant_inserted_for_meal:
-                        continue
-                    
+                    # Kiểm tra xem POI cuối nằm trong meal nào
                     if current_datetime and meal_windows:
                         travel_time_to_last = self.calculator.calculate_travel_time(
                             distance_matrix[current_pos][i + 1],
@@ -905,15 +1001,26 @@ class GreedyRouteBuilder:
                         )
                         arrival_at_last = current_datetime + timedelta(minutes=total_travel_time + total_stay_time + travel_time_to_last)
                         
-                        in_meal_window = False
-                        for meal_type, window in meal_windows.items():
-                            if window:
-                                meal_start, meal_end = window
-                                if meal_start <= arrival_at_last <= meal_end:
-                                    in_meal_window = True
-                                    break
+                        in_lunch = False
+                        in_dinner = False
                         
-                        if not in_meal_window:
+                        if meal_windows.get('lunch'):
+                            lunch_start, lunch_end = meal_windows['lunch']
+                            if lunch_start <= arrival_at_last <= lunch_end:
+                                in_lunch = True
+                        
+                        if meal_windows.get('dinner'):
+                            dinner_start, dinner_end = meal_windows['dinner']
+                            if dinner_start <= arrival_at_last <= dinner_end:
+                                in_dinner = True
+                        
+                        # Loại bỏ nếu meal đó đã có restaurant
+                        if in_lunch and lunch_restaurant_inserted:
+                            continue
+                        if in_dinner and dinner_restaurant_inserted:
+                            continue
+                        # Loại bỏ nếu không nằm trong bất kỳ meal window nào
+                        if not in_lunch and not in_dinner:
                             continue
                 
                 # Kiểm tra khoảng cách đến user
