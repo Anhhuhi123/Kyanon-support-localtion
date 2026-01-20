@@ -7,24 +7,24 @@ Allowed values:
 
 1. poi_type_new – must be one of:
    - "Restaurant"
-   - "Cafe & Bakery"
+   - "Cafe"
    - "Bar"
 
 2. main_subcategory – must be one of:
    - Restaurant: ["Casual Restaurant","Fine Dining","Family Restaurant","Buffet","Fast Food"]
-   - Cafe & Bakery: ["Coffee Shop","Tea House","Dessert Cafe","Bakery"]
+   - Cafe : ["Coffee Shop","Tea House","Dessert Cafe","Bakery"]
    - Bar: ["Nightclub","Live Music Venue","Pub & Sports Bar","Rooftop / View Bar"]
 
 3. specialization – must be chosen from:
    - Restaurant: ["Seafood","Sushi","BBQ","Steakhouse","Italian","French","Indian","Japanese","Korean","Thai","Vietnamese","Chinese","Local Food","Vegan/Vegetarian","Fusion"]
-   - Cafe & Bakery: ["Pastries","Breakfast/Brunch","Desserts","Vegan Options","Work-friendly","Specialty Coffee","Specialty Tea","Bakery Items", "Pet-friendly"]
+   - Cafe : ["Pastries","Breakfast/Brunch","Desserts","Vegan Options","Work-friendly","Specialty Coffee","Specialty Tea","Bakery Items", "Pet-friendly"]
    - Bar: ["Nightlife / Party","Chill & Lounge","Live Entertainment","Sports & Social","Scenic View","Craft & Signature"]
 
 Suitability (REQUIRED): Always include the suitability field with Solo, Couple, Friends, Family with kids, and Business traveler / free time percentages (0–100, not required to sum to 100). If you have metadata from "Popular for", "Atmosphere", "Offerings", "Highlights" to estimate suitability, use that. If metadata is limited or missing, estimate suitability based on poi_type_new and main_subcategory or poi_type_new(if only have poi_type_new) using reasonable defaults for that type of venue.
 
 Rules:
 - Use only allowed categories; do NOT invent new ones.
-- **If the POI is NOT a Restaurant, Cafe & Bakery, or Bar (e.g., Hotel, Museum, Park, Shop, etc.), set poi_type_new to the actual category from the PoiType metadata (use the first/main category if multiple), and return: {"id": "...", "poi_type_new": "<actual_category>", "suitability": {"Solo": <0-100>, "Couple": <0-100>, "Friends": <0-100>, "Family with kids": <0-100>, "Business traveler / free time": <0-100>}} - estimate suitability based on the POI type.**
+- **If the POI is NOT a Restaurant, Cafe , or Bar (e.g., Hotel, Museum, Park, Shop, etc.), set poi_type_new to the actual category from the PoiType metadata (use the first/main category if multiple), and return: {"id": "...", "poi_type_new": "<actual_category>", "suitability": {"Solo": <0-100>, "Couple": <0-100>, "Friends": <0-100>, "Family with kids": <0-100>, "Business traveler / free time": <0-100>}} - estimate suitability based on the POI type.**
 - Use metadata fields: "Popular for", "Atmosphere", "Offerings", "Highlights", "PoiType", "Crowd", "Dining Options", "Children".
 - Always include "id" exactly as provided (no processing).
 - Always include "poi_type_new".
