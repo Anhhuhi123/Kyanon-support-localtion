@@ -6,12 +6,13 @@ from fastapi import APIRouter, HTTPException
 from pydantics.user import UserIdRequest 
 from pydantics.poi import ConfirmReplaceRequest, PoiRequest
 from services.poi_service import PoiService
-
+from services.ingest_poi_to_qdrant import IngestPoiToQdrantService
 router = APIRouter(prefix="/api/v1/poi", tags=["Poi"])
 
 # Service instance sẽ được set từ server.py startup event
 poi_service: PoiService = None
 search_service = None  # Will be set from server.py
+ingest_qdrant_service: IngestPoiToQdrantService = None  # Will be set from server.py
 
 @router.post("/visited")
 async def get_poi_visited(user_id: UserIdRequest):
@@ -69,217 +70,45 @@ async def confirm_replace_poi(req: ConfirmReplaceRequest):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.post("/sync_pois")
+@router.post("/update-poi-clean")
 async def sync_pois(payload: PoiRequest) -> dict:
 
     if poi_service is None:
         raise HTTPException(status_code=500, detail="POI service not initialized")
+    
+    if ingest_qdrant_service is None:
+        raise HTTPException(status_code=500, detail="Ingest Qdrant service not initialized")
 
     add_ids = [str(i) for i in (payload.add or [])]
     update_ids = [str(i) for i in (payload.update or [])]
     delete_ids = [str(i) for i in (payload.delete or [])]
     try: 
-        max_total_reviews = await poi_service.get_max_total_reviews()
-        result: dict = {}
-
-        if add_ids:
-            result["add"] = await poi_service.add_new_poi(add_ids, max_total_reviews)
-        if update_ids:
-            result["update"] = await poi_service.update_existing_poi(update_ids, max_total_reviews)
+        # xử lí trùng lặp id giữa add và update và delete
+        add_set = set(add_ids)
+        update_set = set(update_ids) - add_set
+        candidate_ids = add_set | update_set
+        final_ids = list(candidate_ids - set(delete_ids))
+        if final_ids:
+            result_add = await poi_service.add_new_poi(final_ids)
         if delete_ids:
-            result["delete"] = await poi_service.delete_poi(delete_ids)
-
-        if not result:
-            return {"message": "No POI IDs provided"}
-
-        return result
+            result_delete = await poi_service.delete_poi(delete_ids) 
+        # clean trong bảng poi_clean
+        result_clean = await poi_service.clean_poi_clean_table(final_ids)
+        # service llm generate description
+        result_llm_gen = await poi_service.generate_description(final_ids)
+        # normalize lại total_reviews sau khi thêm mới và cập nhật (normalize toàn bộ PoiClean)
+        result_normalize = await poi_service.normalize_data()
+        # Ingest toàn bộ PoiClean vào Qdrant
+        result_qdrant = await ingest_qdrant_service.ingest_all_poi()
+        return {
+            "inserted": result_add if final_ids else None,
+            "deleted": result_delete if delete_ids else None,
+            "result_clean": result_clean,
+            "result_llm_gen": result_llm_gen,
+            "result_normalize": result_normalize,
+            "result_qdrant": result_qdrant
+        }
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
-
-# @router.post("/sync_pois")
-# def sync_pois(payload: PoiRequest) -> dict:
-#     conn = psycopg2.connect(Config.get_db_connection_string())
-#     cursor = conn.cursor()
-
-#     try:
-#         add_ids = [str(i) for i in (payload.add or [])]
-#         update_ids = [str(i) for i in (payload.update or [])]
-#         delete_ids = [str(i) for i in (payload.delete or [])]
-
-#         inserted = 0
-#         updated = 0
-#         deleted = 0
-
-#         # =========================================================
-#         # ADD — insert mới, nếu trùng id thì bỏ qua
-#         # =========================================================
-#         if add_ids:
-#             cursor.execute(
-#                 """
-#                 SELECT
-#                     id,
-#                     name,
-#                     address,
-#                     lat,
-#                     long,
-#                     geom,
-#                     poi_type,
-#                     avg_star,
-#                     total_reviews,
-#                     normalize_stars_reviews
-#                 FROM poi_locations_uuid
-#                 WHERE id IN %s
-#                 """,
-#                 (tuple(add_ids),)
-#             )
-
-#             rows = cursor.fetchall()
-
-#             insert_values = [
-#                 (
-#                     r[0],  # id
-#                     r[1],  # name
-#                     r[2],  # address
-#                     r[3],  # lat
-#                     r[4],  # long
-#                     r[5],  # geom
-#                     r[6],  # poi_type
-#                     r[7],  # avg_star
-#                     r[8],  # total_reviews
-#                     r[9],  # normalize_stars_reviews
-#                 )
-#                 for r in rows
-#             ]
-
-#             cursor.executemany(
-#                 """
-#                 INSERT INTO poi_locations_uuid_test (
-#                     id,
-#                     name,
-#                     address,
-#                     lat,
-#                     long,
-#                     geom,
-#                     poi_type,
-#                     avg_star,
-#                     total_reviews,
-#                     normalize_stars_reviews
-#                 )
-#                 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-#                 ON CONFLICT (id) DO NOTHING
-#                 """,
-#                 insert_values
-#             )
-
-#             inserted = cursor.rowcount if cursor.rowcount > 0 else 0
-
-#         # =========================================================
-#         # UPDATE — chỉ update record đã tồn tại
-#         # =========================================================
-#         if update_ids:
-#             cursor.execute(
-#                 """
-#                 SELECT
-#                     id,
-#                     name,
-#                     address,
-#                     lat,
-#                     long,
-#                     geom,
-#                     poi_type,
-#                     avg_star,
-#                     total_reviews,
-#                     normalize_stars_reviews
-#                 FROM poi_locations_uuid
-#                 WHERE id IN %s
-#                 """,
-#                 (tuple(update_ids),)
-#             )
-
-#             rows = cursor.fetchall()
-
-#             update_values = [
-#                 (
-#                     r[1],  # name
-#                     r[2],  # address
-#                     r[3],  # lat
-#                     r[4],  # long
-#                     r[5],  # geom
-#                     r[6],  # poi_type
-#                     r[7],  # avg_star
-#                     r[8],  # total_reviews
-#                     r[9],  # normalize_stars_reviews
-#                     r[0],  # id (WHERE)
-#                 )
-#                 for r in rows
-#             ]
-
-#             cursor.executemany(
-#                 """
-#                 UPDATE poi_locations_uuid_test
-#                 SET
-#                     name = %s,
-#                     address = %s,
-#                     lat = %s,
-#                     long = %s,
-#                     geom = %s,
-#                     poi_type = %s,
-#                     avg_star = %s,
-#                     total_reviews = %s,
-#                     normalize_stars_reviews = %s
-#                 WHERE id = %s
-#                 """,
-#                 update_values
-#             )
-
-#             updated = cursor.rowcount if cursor.rowcount > 0 else 0
-
-#         # =========================================================
-#         # DELETE — xóa thẳng
-#         # =========================================================
-#         if delete_ids:
-#             cursor.execute(
-#                 "DELETE FROM poi_locations_uuid_test WHERE id IN %s",
-#                 (tuple(delete_ids),)
-#             )
-#             deleted = cursor.rowcount if cursor.rowcount else 0
-
-#         conn.commit()
-
-#         return {
-#             "inserted": inserted,
-#             "updated": updated,
-#             "deleted": deleted,
-#         }
-
-#     except Exception:
-#         conn.rollback()
-#         raise
-
-#     finally:
-#         cursor.close()
-#         conn.close()
-
-
-# @router.post("/clean_data")
-# def clean_data(req: UuidRequest) -> dict:
-#     poi_id = req.id[0] 
-#     # with conn.cursor() as cur:
-#     conn = psycopg2.connect(Config.get_db_connection_string())
-#     cursor = conn.cursor()
-#     cursor.execute(
-#         'SELECT id, content, raw_data FROM "Poi" WHERE id = %s',
-#         (str(poi_id),)
-#     )
-#     row = cursor.fetchone()
-
-#     if not row:
-#         raise HTTPException(status_code=404, detail="POI not found")
-
-#     # Nếu cursor trả tuple → convert sang dict
-#     colnames = [desc[0] for desc in cursor.description]
-#     row_dict = dict(zip(colnames, row))
-
-#     return map_poi_record(row_dict)

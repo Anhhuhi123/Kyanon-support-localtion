@@ -207,7 +207,7 @@ async def route_search(request: RouteSearchRequest):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.post("/update-poi")
+@router.post("/replace-poi")
 async def update_poi(request: UpdatePOIRequest):
     """
     Update POI trong route đã có bằng POI khác cùng category

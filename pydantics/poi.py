@@ -10,6 +10,7 @@ class PoiRequest(BaseModel):
     delete: List[UUID] = Field(default_factory=list)
 
 
+
 class ConfirmReplaceRequest(BaseModel):
     user_id: UUID = Field(
         ...,
