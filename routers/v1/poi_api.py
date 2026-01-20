@@ -4,14 +4,15 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../'
 
 from fastapi import APIRouter, HTTPException
 from pydantics.user import UserIdRequest 
-from pydantics.poi import ConfirmReplaceRequest, PoiRequest, PoiRequest1
+from pydantics.poi import ConfirmReplaceRequest, PoiRequest
 from services.poi_service import PoiService
-
+from services.ingest_poi_to_qdrant import IngestPoiToQdrantService
 router = APIRouter(prefix="/api/v1/poi", tags=["Poi"])
 
 # Service instance sẽ được set từ server.py startup event
 poi_service: PoiService = None
 search_service = None  # Will be set from server.py
+ingest_qdrant_service: IngestPoiToQdrantService = None  # Will be set from server.py
 
 @router.post("/visited")
 async def get_poi_visited(user_id: UserIdRequest):
@@ -74,36 +75,38 @@ async def sync_pois(payload: PoiRequest) -> dict:
 
     if poi_service is None:
         raise HTTPException(status_code=500, detail="POI service not initialized")
+    
+    if ingest_qdrant_service is None:
+        raise HTTPException(status_code=500, detail="Ingest Qdrant service not initialized")
 
     add_ids = [str(i) for i in (payload.add or [])]
     update_ids = [str(i) for i in (payload.update or [])]
     delete_ids = [str(i) for i in (payload.delete or [])]
     try: 
-        if add_ids:
-            result_add = await poi_service.add_new_poi(add_ids)
-        # if update_ids:
-        #     result_update = await poi_service.update_existing_poi(update_ids) # Bằng làm dựa theo cái add_new_poi
-        # if delete_ids:
-        #     result_delete = await poi_service.delete_poi(delete_ids) # Bằng làm 
         # xử lí trùng lặp id giữa add và update và delete
         add_set = set(add_ids)
         update_set = set(update_ids) - add_set
         candidate_ids = add_set | update_set
         final_ids = list(candidate_ids - set(delete_ids))
+        if final_ids:
+            result_add = await poi_service.add_new_poi(final_ids)
+        if delete_ids:
+            result_delete = await poi_service.delete_poi(delete_ids) 
         # clean trong bảng poi_clean
         result_clean = await poi_service.clean_poi_clean_table(final_ids)
         # service llm generate description
         result_llm_gen = await poi_service.generate_description(final_ids)
         # normalize lại total_reviews sau khi thêm mới và cập nhật (normalize toàn bộ PoiClean)
         result_normalize = await poi_service.normalize_data()
-        # trich qdrant - Quốc Anh làm
+        # Ingest toàn bộ PoiClean vào Qdrant
+        result_qdrant = await ingest_qdrant_service.ingest_all_poi()
         return {
-            "inserted": result_add if add_ids else None,
-            # "updated": result_update.get("updated", 0) if update_ids else 0,
-            # "deleted": result_delete.get("deleted", 0) if delete_ids else 0,
+            "inserted": result_add if final_ids else None,
+            "deleted": result_delete if delete_ids else None,
             "result_clean": result_clean,
             "result_llm_gen": result_llm_gen,
-            "result_normalize": result_normalize
+            "result_normalize": result_normalize,
+            "result_qdrant": result_qdrant
         }
     except HTTPException:
         raise

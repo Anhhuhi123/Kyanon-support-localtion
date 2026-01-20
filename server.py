@@ -121,6 +121,7 @@ async def startup_event():
     from services.route_service import SemanticSearchService
     from services.location_service import LocationService
     from services.poi_service import PoiService
+    from services.ingest_poi_to_qdrant import IngestPoiToQdrantService
 
     # Lấy pools từ config
     db_pool = get_db_pool()
@@ -161,6 +162,10 @@ async def startup_event():
         db_pool=db_pool,
         redis_client=redis_client
     )
+    
+    # Initialize IngestPoiToQdrantService
+    poi_api_module.ingest_qdrant_service = IngestPoiToQdrantService(db_pool=db_pool)
+    await poi_api_module.ingest_qdrant_service.initialize()
     
     # Set search_service cho POI API (dùng chung với route service)
     poi_api_module.search_service = route_api_module._route_service_instance

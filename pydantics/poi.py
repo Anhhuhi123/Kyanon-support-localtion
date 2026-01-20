@@ -10,12 +10,6 @@ class PoiRequest(BaseModel):
     delete: List[UUID] = Field(default_factory=list)
 
 
-class PoiRequest1(BaseModel):
-    add: List[UUID] = Field(default_factory=list, 
-        example=["96451ce8-09ec-4b42-89ea-82534456e189","5f1958f0-3c70-44e6-9ff0-a758909c28f5"]     
-        )
-    update: List[UUID] = Field(default_factory=list)
-    delete: List[UUID] = Field(default_factory=list)
 
 class ConfirmReplaceRequest(BaseModel):
     user_id: UUID = Field(

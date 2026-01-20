@@ -182,6 +182,7 @@ class PoiService:
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
     
+    
     async def _upsert_poi_clean(self, conn: asyncpg.Connection, data: Dict[str, Any]):
         """
         Insert or Update POI data vào bảng PoiClean
@@ -425,121 +426,111 @@ class PoiService:
             "error_count": error_count,
             "error_ids": error_ids
         }
-
-
-
-    async def normalize_data(self) -> Dict[str, Any]:
+    
+    async def delete_poi(self, poi_ids: List[UUID]) -> Dict[str, Any]:
         """
-        Normalize total_reviews cho toàn bộ POI trong bảng PoiClean.
-        
-        Tự động lấy min_avg_stars, max_avg_stars, max_total_reviews từ PoiClean.
-        
-        Công thức (từ data_processing.py):
-        - avg_stars_norm = (avg_stars - min_avg_stars) / (max_avg_stars - min_avg_stars)
-        - total_reviews_norm = log(total_reviews + 1) / log(max_total_reviews + 1)
-        - normalize_stars_reviews = avg_stars_norm * 0.6 + total_reviews_norm * 0.4
-            
-        Returns:
-            Dict chứa kết quả: success_count, failed_count, failed_ids
+        Xóa hẳn POI khỏi bảng PoiClean theo danh sách IDs.
         """
-        import numpy as np
-        
         if not self.db_pool:
             raise HTTPException(status_code=500, detail="Database pool not initialized")
-        
-        success_count = 0
-        failed_count = 0
-        failed_ids = []
-        
+
+        if not poi_ids:
+            return {
+                "deleted_count": 0,
+                "not_found_ids": [],
+                "message": "No POI IDs provided",
+            }
+
         try:
             async with self.db_pool.acquire() as conn:
-                # Lấy min_avg_stars, max_avg_stars, max_total_reviews từ PoiClean
-                stats_row = await conn.fetchrow(
-                    '''SELECT 
-                        MIN(avg_stars) AS min_avg_stars,
-                        MAX(avg_stars) AS max_avg_stars,
-                        MAX(total_reviews) AS max_total_reviews
-                    FROM "PoiClean" 
-                    WHERE "deletedAt" IS NULL'''
+                # Lấy các id tồn tại
+                existing_rows = await conn.fetch(
+                    'SELECT id FROM "PoiClean" WHERE "id" = ANY($1::uuid[])',
+                    poi_ids,
                 )
-                
-                min_avg_stars = stats_row["min_avg_stars"] if stats_row and stats_row["min_avg_stars"] else 1.0
-                max_avg_stars = stats_row["max_avg_stars"] if stats_row and stats_row["max_avg_stars"] else 5.0
-                max_total_reviews = stats_row["max_total_reviews"] if stats_row and stats_row["max_total_reviews"] else 1
-                
-                if max_total_reviews <= 0:
-                    return {
-                        "success_count": 0,
-                        "failed_count": 0,
-                        "failed_ids": [],
-                        "message": "max_total_reviews must be greater than 0"
-                    }
-                
-                # Lấy toàn bộ data từ bảng PoiClean
-                rows = await conn.fetch(
-                    'SELECT id, avg_stars, total_reviews FROM "PoiClean" WHERE "deletedAt" IS NULL'
-                )
-                
-                if not rows:
-                    return {
-                        "success_count": 0,
-                        "failed_count": 0,
-                        "failed_ids": [],
-                        "message": "No POI found in PoiClean"
-                    }
-                
-                # Normalize từng POI
-                for row in rows:
-                    try:
-                        poi_id = row["id"]
-                        avg_stars = row["avg_stars"] or min_avg_stars
-                        total_reviews = row["total_reviews"] or 1
-                        
-                        # Normalize avg_stars using Min-Max Scaling
-                        if max_avg_stars != min_avg_stars:
-                            avg_stars_norm = (avg_stars - min_avg_stars) / (max_avg_stars - min_avg_stars)
-                        else:
-                            avg_stars_norm = 0.5
-                        
-                        # Normalize total_reviews using Log Transform
-                        if max_total_reviews > 0:
-                            total_reviews_norm = np.log(total_reviews + 1) / np.log(max_total_reviews + 1)
-                        else:
-                            total_reviews_norm = 0.0
-                        
-                        # Calculate combined score (60% avg_stars, 40% total_reviews)
-                        normalize_stars_reviews = round(avg_stars_norm * 0.6 + total_reviews_norm * 0.4, 3)
-                        
-                        # Update normalized value vào PoiClean
-                        await conn.execute(
-                            '''UPDATE "PoiClean"
-                               SET normalize_stars_reviews = $1,
-                                   "updatedAt" = NOW()
-                               WHERE id = $2''',
-                            normalize_stars_reviews,
-                            poi_id
-                        )
-                        success_count += 1
-                        
-                    except Exception as e:
-                        failed_count += 1
-                        failed_ids.append(str(row.get("id")))
-                        print(f"Error normalizing POI {row.get('id')}: {e}")
-                
+                existing_ids = [row["id"] for row in existing_rows]
+                not_found_ids = [str(pid) for pid in poi_ids if pid not in existing_ids]
+
+                deleted_count = 0
+                if existing_ids:
+                    # Hard delete
+                    result = await conn.execute(
+                        'DELETE FROM "PoiClean" WHERE "id" = ANY($1::uuid[])',
+                        existing_ids,
+                    )
+                    # asyncpg trả về dạng "DELETE <n>"
+                    deleted_count = int(result.split()[-1]) if result else len(existing_ids)
+
                 return {
-                    "success_count": success_count,
-                    "failed_count": failed_count,
-                    "failed_ids": failed_ids,
-                    "min_avg_stars": min_avg_stars,
-                    "max_avg_stars": max_avg_stars,
-                    "max_total_reviews": max_total_reviews,
-                    "message": f"Normalized {success_count} POIs successfully, {failed_count} failed"
+                    "deleted_count": deleted_count,
+                    "not_found_ids": not_found_ids,
+                    "message": f"Deleted {deleted_count} POIs, {len(not_found_ids)} not found",
                 }
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
+    async def normalize_data(self) -> Dict[str, Any]:
+        """
+        Normalize normalize_stars_reviews cho toàn bộ POI bằng SQL (1 UPDATE duy nhất)
+        """
 
+        if not self.db_pool:
+            raise HTTPException(status_code=500, detail="Database pool not initialized")
+
+        sql = """
+        WITH stats AS (
+            SELECT
+                MIN(avg_stars) AS min_avg_stars,
+                MAX(avg_stars) AS max_avg_stars,
+                MAX(total_reviews) AS max_total_reviews
+            FROM "PoiClean"
+            WHERE "deletedAt" IS NULL
+        )
+        UPDATE "PoiClean" p
+        SET
+            normalize_stars_reviews = ROUND(
+                (
+                    (
+                        CASE
+                            WHEN s.max_avg_stars != s.min_avg_stars
+                            THEN
+                                (COALESCE(p.avg_stars, s.min_avg_stars) - s.min_avg_stars)
+                                / (s.max_avg_stars - s.min_avg_stars)
+                            ELSE
+                                0.5
+                        END
+                    ) * 0.6
+                    +
+                    (
+                        CASE
+                            WHEN s.max_total_reviews > 0
+                            THEN
+                                LN(COALESCE(p.total_reviews, 1) + 1)
+                                / LN(s.max_total_reviews + 1)
+                            ELSE
+                                0
+                        END
+                    ) * 0.4
+                )::numeric
+            , 3),
+            "updatedAt" = NOW()
+        FROM stats s
+        WHERE p."deletedAt" IS NULL;
+        """
+
+        try:
+            async with self.db_pool.acquire() as conn:
+                result = await conn.execute(sql)
+
+            return {
+                "status": "success",
+                "message": "Normalize completed successfully",
+                "db_result": result
+            }
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
     async def clean_poi_clean_table(self, poi_ids: List[str] = None) -> Dict[str, Any]:
         """
