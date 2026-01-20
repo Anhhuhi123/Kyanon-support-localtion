@@ -123,7 +123,8 @@ class SemanticSearchService:
         max_routes: int = 3,
         top_k_semantic: int = 10,
         customer_like: bool = False,
-        current_datetime: Optional[datetime] = None
+        current_datetime: Optional[datetime] = None,
+        duration_mode: bool = False 
     ) -> Dict[str, Any]:
         """
         Delegate to RouteSearchService.search_combined_with_routes
@@ -132,7 +133,7 @@ class SemanticSearchService:
         return await self.route_service.build_routes(
             latitude, longitude, transportation_mode, semantic_query, user_id,
             max_time_minutes, target_places, max_routes, top_k_semantic,
-            customer_like, current_datetime
+            customer_like, current_datetime, duration_mode
         )
     
     async def update_poi_in_route(
@@ -545,7 +546,8 @@ class SemanticSearchService:
         target_places: int = 5,
         top_k_semantic: int = 10,
         customer_like: bool = False,
-        current_datetime: Optional[datetime] = None
+        current_datetime: Optional[datetime] = None,
+        duration_mode: bool = False
     ) -> Dict[str, Any]:
         """
         Replace route: Xây dựng route mới với ID = route_id_to_replace + 1, 
@@ -600,7 +602,8 @@ class SemanticSearchService:
                 max_routes=new_route_id,  # Cộng thêm 1 để có route mới
                 top_k_semantic=top_k_semantic,
                 customer_like=customer_like,
-                current_datetime=current_datetime
+                current_datetime=current_datetime,
+                duration_mode=duration_mode
             )
             
             if result["status"] == "error":

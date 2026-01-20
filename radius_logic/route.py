@@ -50,7 +50,8 @@ class RouteBuilder:
         max_time_minutes: int,
         target_places: int = 5,
         max_routes: int = 3,
-        current_datetime: Optional[datetime] = None
+        current_datetime: Optional[datetime] = None,
+        duration_mode: bool = False
     ) -> List[Dict[str, Any]]:
         """
         Xây dựng nhiều lộ trình (top 3) bằng cách thử các điểm xuất phát khác nhau
@@ -192,17 +193,31 @@ class RouteBuilder:
             print(f"🎯 Điểm đầu tiên BẮT BUỘC (score cao nhất): {places[best_first_place]['name']} (score={places[best_first_place]['score']:.3f})")
         
         # Xây dựng route đầu tiên từ điểm có score cao nhất
-        route_1 = self.greedy_builder.build_single_route_greedy(
-            user_location=user_location,
-            places=places,
-            transportation_mode=transportation_mode,
-            max_time_minutes=max_time_minutes,
-            target_places=target_places,
-            first_place_idx=best_first_place,
-            current_datetime=current_datetime,
-            distance_matrix=distance_matrix,
-            max_distance=max_distance
-        )
+        if duration_mode:
+            # Sử dụng hàm mới cho duration mode - KHÔNG cần target_places
+            route_1 = self.greedy_builder.build_single_route_greedy_duration(
+                user_location=user_location,
+                places=places,
+                transportation_mode=transportation_mode,
+                max_time_minutes=max_time_minutes,
+                first_place_idx=best_first_place,
+                current_datetime=current_datetime,
+                distance_matrix=distance_matrix,
+                max_distance=max_distance
+            )
+        else:
+            # Sử dụng hàm cũ cho mode bình thường
+            route_1 = self.greedy_builder.build_single_route_greedy(
+                user_location=user_location,
+                places=places,
+                transportation_mode=transportation_mode,
+                max_time_minutes=max_time_minutes,
+                target_places=target_places,
+                first_place_idx=best_first_place,
+                current_datetime=current_datetime,
+                distance_matrix=distance_matrix,
+                max_distance=max_distance
+            )
         
         if route_1 is None:
             return []
@@ -324,6 +339,7 @@ class RouteBuilder:
         target_places: int = 5,
         max_routes: int = 3,
         current_datetime: Optional[datetime] = None,
+        duration_mode: bool = False,
         executor: Optional[ProcessPoolExecutor] = None
     ) -> List[Dict[str, Any]]:
         """
@@ -356,7 +372,8 @@ class RouteBuilder:
             max_time_minutes,
             target_places,
             max_routes,
-            current_datetime
+            current_datetime,
+            duration_mode 
         )
         
         # Nếu không truyền executor (process pool), dùng default threadpool

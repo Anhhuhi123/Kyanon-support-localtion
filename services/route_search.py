@@ -45,7 +45,8 @@ class RouteSearchService(CombinedSearchService):
         max_routes: int = 3,
         top_k_semantic: int = 10,
         customer_like: bool = False,
-        current_datetime: Optional[datetime] = None
+        current_datetime: Optional[datetime] = None,
+        duration_mode: bool = False
     ):
         """
         Tìm kiếm kết hợp + Xây dựng lộ trình với tùy chọn lọc theo thời gian mở cửa
@@ -118,8 +119,10 @@ class RouteSearchService(CombinedSearchService):
                 max_time_minutes=max_time_minutes,
                 target_places=target_places,
                 max_routes=max_routes,
+                duration_mode=duration_mode,
                 current_datetime=current_datetime,  # Pass datetime để validate opening hours
                 executor=self.process_pool  # Use process pool for CPU-bound task
+                
             )
             
             route_time = time.time() - route_start
