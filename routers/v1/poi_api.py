@@ -70,7 +70,7 @@ async def confirm_replace_poi(req: ConfirmReplaceRequest):
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 
-@router.post("/update-poi")
+@router.post("/update-poi-clean")
 async def sync_pois(payload: PoiRequest) -> dict:
 
     if poi_service is None:

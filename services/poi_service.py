@@ -51,7 +51,8 @@ class PoiService:
                 )
                 
                 if not itinerary:
-                    raise HTTPException(status_code=404, detail="Itinerary not found")
+                    # raise HTTPException(status_code=404, detail="Itinerary not found")
+                    return []
 
                 itinerary_id = itinerary["id"]
 
