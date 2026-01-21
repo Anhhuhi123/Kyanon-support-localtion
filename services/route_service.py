@@ -322,7 +322,7 @@ class SemanticSearchService:
                     travel_time_minutes = round((distance_km / speed) * 60, 1)
                 
                 # Stay time
-                stay_time_minutes = RouteConfig.DEFAULT_STAY_TIME
+                stay_time_minutes = poi.get("stay_time", RouteConfig.DEFAULT_STAY_TIME)
                 
                 # Tính distance changes so với POI cũ
                 distance_changes = self.poi_update_service.calculate_distance_changes(

@@ -160,7 +160,10 @@ class GreedyRouteBuilder:
                 distance_matrix[0][best_first + 1],
                 transportation_mode
             )
-            stay_time = self.calculator.get_stay_time(places[best_first].get("poi_type", ""))
+            stay_time = self.calculator.get_stay_time(
+                places[best_first].get("poi_type", ""),
+                places[best_first].get("stay_time")
+                )
             total_travel_time += travel_time
             total_stay_time += stay_time
             current_pos = best_first + 1
@@ -319,7 +322,10 @@ class GreedyRouteBuilder:
                         distance_matrix[current_pos][i + 1],
                         transportation_mode
                     )
-                    temp_stay = total_stay_time + self.calculator.get_stay_time(places[i].get("poi_type", ""))
+                    temp_stay = total_stay_time + self.calculator.get_stay_time(
+                        places[i].get("poi_type", ""),
+                        places[i].get("stay_time")
+                        )
                     estimated_return = self.calculator.calculate_travel_time(
                         distance_matrix[i + 1][0],
                         transportation_mode
@@ -377,7 +383,10 @@ class GreedyRouteBuilder:
                             distance_matrix[current_pos][i + 1],
                             transportation_mode
                         )
-                        temp_stay = total_stay_time + self.calculator.get_stay_time(places[i].get("poi_type", ""))
+                        temp_stay = total_stay_time + self.calculator.get_stay_time(
+                            places[i].get("poi_type", ""),
+                            places[i].get("stay_time")
+                            )
                         estimated_return = self.calculator.calculate_travel_time(
                             distance_matrix[i + 1][0],
                             transportation_mode
@@ -403,7 +412,10 @@ class GreedyRouteBuilder:
                     distance_matrix[current_pos][best_next + 1],
                     transportation_mode
                 )
-                stay_time = self.calculator.get_stay_time(places[best_next].get("poi_type", ""))
+                stay_time = self.calculator.get_stay_time(
+                    places[best_next].get("poi_type", ""),
+                    places[best_next].get("stay_time")
+                    )
                 total_travel_time += travel_time
                 total_stay_time += stay_time
                 
@@ -493,7 +505,10 @@ class GreedyRouteBuilder:
                         distance_matrix[current_pos][i + 1],
                         transportation_mode
                     )
-                    temp_stay = total_stay_time + self.calculator.get_stay_time(places[i].get("poi_type", ""))
+                    temp_stay = total_stay_time + self.calculator.get_stay_time(
+                        places[i].get("poi_type", ""),
+                        places[i].get("stay_time")
+                        )
                     return_time = self.calculator.calculate_travel_time(dist_to_user, transportation_mode)
                     
                     if temp_travel + temp_stay + return_time > max_time_minutes:
@@ -526,7 +541,10 @@ class GreedyRouteBuilder:
                     distance_matrix[current_pos][best_last + 1],
                     transportation_mode
                 )
-                stay_time = self.calculator.get_stay_time(places[best_last].get("poi_type", ""))
+                stay_time = self.calculator.get_stay_time(
+                    places[best_last].get("poi_type", ""),
+                    places[best_first].get("stay_time")
+                    )
                 total_travel_time += travel_time
                 total_stay_time += stay_time
                 current_pos = best_last + 1
@@ -553,7 +571,10 @@ class GreedyRouteBuilder:
                     distance_matrix[prev_pos][place_idx + 1],
                     transportation_mode
                 )
-                stay_time = self.calculator.get_stay_time(place.get("poi_type", ""))
+                stay_time = self.calculator.get_stay_time(
+                    place.get("poi_type", ""),
+                    place.get("stay_time")
+                    )
                 
                 # Tính combined score cho POI này
                 is_first_poi = (i == 0)
@@ -726,7 +747,10 @@ class GreedyRouteBuilder:
             distance_matrix[0][best_first + 1],
             transportation_mode
         )
-        stay_time = self.calculator.get_stay_time(places[best_first].get("poi_type", ""))
+        stay_time = self.calculator.get_stay_time(
+            places[best_first].get("poi_type", ""),
+            places[best_first].get("stay_time")
+        )
         total_travel_time += travel_time
         total_stay_time += stay_time
         current_pos = best_first + 1
@@ -879,7 +903,10 @@ class GreedyRouteBuilder:
                     distance_matrix[current_pos][i + 1],
                     transportation_mode
                 )
-                temp_stay = total_stay_time + self.calculator.get_stay_time(places[i].get("poi_type", ""))
+                temp_stay = total_stay_time + self.calculator.get_stay_time(
+                    places[i].get("poi_type", ""),
+                    places[i].get("stay_time")
+                )
                 estimated_return = self.calculator.calculate_travel_time(
                     distance_matrix[i + 1][0],
                     transportation_mode
@@ -930,7 +957,10 @@ class GreedyRouteBuilder:
                         distance_matrix[current_pos][i + 1],
                         transportation_mode
                     )
-                    temp_stay = total_stay_time + self.calculator.get_stay_time(places[i].get("poi_type", ""))
+                    temp_stay = total_stay_time + self.calculator.get_stay_time(
+                        places[i].get("poi_type", ""),
+                        places[i].get("stay_time")
+                        )
                     estimated_return = self.calculator.calculate_travel_time(
                         distance_matrix[i + 1][0],
                         transportation_mode
@@ -958,7 +988,10 @@ class GreedyRouteBuilder:
                 distance_matrix[current_pos][best_next + 1],
                 transportation_mode
             )
-            stay_time = self.calculator.get_stay_time(places[best_next].get("poi_type", ""))
+            stay_time = self.calculator.get_stay_time(
+                places[best_next].get("poi_type", ""),
+                places[best_next].get("stay_time")
+                )
             total_travel_time += travel_time
             total_stay_time += stay_time
             
@@ -1042,7 +1075,10 @@ class GreedyRouteBuilder:
                     distance_matrix[current_pos][i + 1],
                     transportation_mode
                 )
-                temp_stay = total_stay_time + self.calculator.get_stay_time(places[i].get("poi_type", ""))
+                temp_stay = total_stay_time + self.calculator.get_stay_time(
+                    places[i].get("poi_type", ""),
+                    places[i].get("stay_time")
+                    )
                 return_time = self.calculator.calculate_travel_time(dist_to_user, transportation_mode)
                 
                 if temp_travel + temp_stay + return_time > max_time_minutes:
@@ -1074,7 +1110,10 @@ class GreedyRouteBuilder:
                 distance_matrix[current_pos][best_last + 1],
                 transportation_mode
             )
-            stay_time = self.calculator.get_stay_time(places[best_last].get("poi_type", ""))
+            stay_time = self.calculator.get_stay_time(
+                places[best_last].get("poi_type", ""),
+                places[best_last].get("stay_time")
+                )
             total_travel_time += travel_time
             total_stay_time += stay_time
             current_pos = best_last + 1
@@ -1101,7 +1140,10 @@ class GreedyRouteBuilder:
                 distance_matrix[prev_pos][place_idx + 1],
                 transportation_mode
             )
-            stay_time = self.calculator.get_stay_time(place.get("poi_type", ""))
+            stay_time = self.calculator.get_stay_time(
+                place.get("poi_type", ""),
+                place.get("stay_time")
+                )
             
             is_first_poi = (i == 0)
             is_last_poi = (i == len(route) - 1)

@@ -10,6 +10,7 @@ import redis.asyncio as aioredis
 from typing import List, Dict, Any, Tuple, Set, Optional
 from config.config import Config
 from utils.time_utils import TimeUtils
+from .route.route_config import RouteConfig
 
 class H3RadiusSearch:
     """
@@ -203,6 +204,7 @@ class H3RadiusSearch:
                         lat,
                         lon,
                         COALESCE(normalize_stars_reviews, 0.5) AS rating,
+                        stay_time,
                         open_hours,
                         poi_type_clean,
                         main_subcategory,
@@ -224,7 +226,7 @@ class H3RadiusSearch:
                 distributed_count = 0
                 
                 for row in rows:
-                    
+                    stay_time = row['stay_time'] if row['stay_time'] is not None else RouteConfig.DEFAULT_STAY_TIME
                     poi = {
                         "id": str(row['id']),  # Convert UUID to string for JSON serialization
                         "name": row['name'],
@@ -236,6 +238,7 @@ class H3RadiusSearch:
                         "lat": row['lat'],
                         "lon": row['lon'],
                         "rating": round(float(row['rating'] or 0.5), 3),
+                        "stay_time": float(stay_time),
                         "open_hours": TimeUtils.normalize_open_hours(row['open_hours'])
                     }
                     
