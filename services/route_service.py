@@ -136,7 +136,7 @@ class SemanticSearchService:
             customer_like, current_datetime, duration_mode
         )
     
-    async def update_poi_in_route(
+    async def replace_poi(
         self,
         user_id: UUID,
         route_id: str,
@@ -144,7 +144,7 @@ class SemanticSearchService:
         current_datetime: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """
-        Update POI trong route bằng POI khác cùng category
+        Replace POI trong route bằng POI khác cùng category
         
         Args:
             user_id: UUID của user

@@ -97,6 +97,15 @@ class RouteSearchService(CombinedSearchService):
                 }
             
             semantic_places = search_result.get("results", [])
+            
+            # ⚠️ CRITICAL: Sắp xếp places để đảm bảo deterministic
+            # Sort theo: (1) score desc, (2) id asc (tie-breaker)
+            if semantic_places:
+                semantic_places = sorted(
+                    semantic_places, 
+                    key=lambda x: (-x.get('score', 0), x.get('id', ''))
+                )
+                print(f"🔄 Sorted {len(semantic_places)} places by score (desc) + id (asc) for deterministic ordering")
           
             if not semantic_places:
                 return {

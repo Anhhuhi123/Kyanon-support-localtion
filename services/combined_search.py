@@ -319,6 +319,13 @@ class CombinedSearchService(SemanticSearchBase):
                 place['category_index'] = data["category_index"]
                 all_results.append(place)
             
+            # ⚠️ CRITICAL: Sort để đảm bảo deterministic
+            # Sort theo: (1) score desc, (2) id asc (tie-breaker)
+            all_results = sorted(
+                all_results,
+                key=lambda x: (-x.get('score', 0), x.get('id', ''))
+            )
+            
             total_time = time.time() - total_start
             
             print(f"\n✅ Total: {len(all_results)} unique POIs from {len(queries)} queries in {total_time:.3f}s")

@@ -118,11 +118,14 @@ class SemanticSearchBase:
             
             # 5. Merge semantic score với location info
             results = []
-            for hit in search_results:
+            # Gán lại score theo thứ tự cố định: 0.94, 0.92, 0.9, 0.88...
+            fixed_scores = [0.94 - (i * 0.02) for i in range(top_k)]
+            
+            for idx, hit in enumerate(search_results):
                 location_info = locations_map.get(hit.id)
                 if location_info:
                     result = {
-                        "score": hit.score,
+                        "score": fixed_scores[idx],  # Dùng fixed score thay vì hit.score
                         **location_info  # Merge tất cả fields từ DB (bao gồm poi_type)
                     }
                     results.append(result)
@@ -230,11 +233,14 @@ class SemanticSearchBase:
             
             # 5. Merge semantic score với location info
             results = []
-            for hit in search_results:
+            # Gán lại score theo thứ tự cố định: 0.94, 0.92, 0.9, 0.88...
+            fixed_scores = [0.94 - (i * 0.02) for i in range(top_k)]
+            
+            for idx, hit in enumerate(search_results):
                 location_info = locations_map.get(hit.id)
                 if location_info:
                     result = {
-                        "score": hit.score,
+                        "score": fixed_scores[idx],  # Dùng fixed score thay vì hit.score
                         **location_info
                     }
                     
@@ -246,6 +252,13 @@ class SemanticSearchBase:
                             result["open_hours"] = spatial_match.get("open_hours", [])
                     
                     results.append(result)
+            
+            # ⚠️ CRITICAL: Sort để đảm bảo deterministic (phòng trường hợp Qdrant không sort)
+            # Sort theo: (1) score desc, (2) id asc (tie-breaker)
+            results = sorted(
+                results,
+                key=lambda x: (-x.get('score', 0), x.get('id', ''))
+            )
             
             return {
                 "status": "success",

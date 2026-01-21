@@ -208,9 +208,9 @@ async def route_search(request: RouteSearchRequest):
 
 
 @router.post("/replace-poi")
-async def update_poi(request: UpdatePOIRequest):
+async def replace_poi(request: UpdatePOIRequest):
     """
-    Update POI trong route đã có bằng POI khác cùng category
+    Replace POI trong route đã có bằng POI khác cùng category
     
     Workflow:
     1. Lấy route metadata từ Redis cache
@@ -249,7 +249,7 @@ async def update_poi(request: UpdatePOIRequest):
         }
     """
     try:
-        result = await get_semantic_service().update_poi_in_route(
+        result = await get_semantic_service().replace_poi(
             user_id=request.user_id,
             route_id=request.route_id,
             poi_id_to_replace=request.poi_id_to_replace,
