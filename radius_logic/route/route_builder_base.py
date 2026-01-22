@@ -1,5 +1,18 @@
 """
-Base Route Builder - Chứa các helper methods chung cho cả 2 mode
+Base Route Builder - Chứa các helper methods chung cho cả 2 mode (target và duration)
+
+Module này định nghĩa lớp BaseRouteBuilder - một lớp cơ sở chứa tất cả các phương thức helper
+được sử dụng chung bởi cả TargetRouteBuilder và DurationRouteBuilder.
+
+Các chức năng chính:
+- analyze_meal_requirements: Phân tích yêu cầu chèn Restaurant cho meal time
+- select_first_poi: Chọn POI đầu tiên dựa trên combined score
+- check_first_poi_meal_status: Kiểm tra POI đầu có phải Restaurant trong meal window không
+- select_last_poi: Chọn POI cuối cùng gần user location
+- format_route_result: Format kết quả route thành cấu trúc chuẩn
+
+Author: Kyanon Team
+Created: 2026-01
 """
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
@@ -10,7 +23,21 @@ from .poi_validator import POIValidator
 from .calculator import Calculator
 
 class BaseRouteBuilder:
-    """Base class chứa các helper methods chung"""
+    """
+    Lớp cơ sở chứa các phương thức helper dùng chung cho route building
+    
+    Class này cung cấp các tiện ích để:
+    1. Phân tích meal requirements (lunch/dinner windows)
+    2. Chọn POI đầu tiên với combined score cao nhất
+    3. Kiểm tra xem POI đầu có phải Restaurant trong meal window không
+    4. Chọn POI cuối cùng gần user để giảm thời gian về
+    5. Format kết quả route thành JSON chuẩn
+    
+    Attributes:
+        geo (GeographicUtils): Utility class cho các tính toán địa lý
+        validator (POIValidator): Validator cho opening hours và POI constraints
+        calculator (Calculator): Calculator cho travel time và combined score
+    """
     
     def __init__(
         self,
@@ -29,15 +56,30 @@ class BaseRouteBuilder:
         max_time_minutes: int
     ) -> Dict[str, Any]:
         """
-        Phân tích categories và meal requirements
+        Phân tích categories và meal requirements để xác định cần chèn Restaurant hay không
         
+        Logic:
+        - Nếu có Cafe & Bakery → KHÔNG chèn Restaurant (vì Cafe đã có đồ ăn nhẹ)
+        - Nếu KHÔNG có Cafe nhưng có Restaurant → Kiểm tra overlap với meal time
+        - Nếu overlap >= 60 phút với lunch/dinner → Cần chèn Restaurant
+        
+        Args:
+            places: Danh sách POI candidates
+            current_datetime: Thời điểm bắt đầu route (None = không validate meal time)
+            max_time_minutes: Thời gian tối đa của route
+            
         Returns:
             Dict chứa:
-            - all_categories: List các category (giữ thứ tự)
-            - should_insert_restaurant_for_meal: bool
-            - meal_windows: Dict[str, Tuple[datetime, datetime]]
-            - need_lunch_restaurant: bool
-            - need_dinner_restaurant: bool
+            - all_categories (List[str]): List các category unique, giữ thứ tự xuất hiện
+            - should_insert_restaurant_for_meal (bool): True nếu cần ưu tiên Restaurant cho meal
+            - meal_windows (Dict): {"lunch": (start, end), "dinner": (start, end)} nếu có overlap
+            - need_lunch_restaurant (bool): True nếu overlap lunch >= 60 phút
+            - need_dinner_restaurant (bool): True nếu overlap dinner >= 60 phút
+        
+        Example:
+            >>> meal_info = self.analyze_meal_requirements(places, datetime(2026, 1, 22, 11, 0), 180)
+            >>> print(meal_info["should_insert_restaurant_for_meal"])  # True (11:00 là lunch time)
+            >>> print(meal_info["need_lunch_restaurant"])  # True
         """
         all_categories = list(dict.fromkeys(
             place.get('category') for place in places if 'category' in place
@@ -87,10 +129,31 @@ class BaseRouteBuilder:
         should_insert_restaurant_for_meal: bool
     ) -> Optional[int]:
         """
-        Chọn POI đầu tiên
+        Chọn POI đầu tiên cho route dựa trên combined score (score + distance)
         
+        Quy tắc chọn:
+        1. Nếu first_place_idx được chỉ định → Dùng luôn
+        2. Nếu không → Chọn POI có combined_score cao nhất trong candidates
+        3. Validate opening hours nếu current_datetime được cung cấp
+        4. Loại trừ Restaurant nếu should_insert_restaurant_for_meal = True (để ưu tiên cho meal time)
+        
+        Combined score = 0.7 × normalized_score + 0.3 × (1 - normalized_distance)
+        
+        Args:
+            places: Danh sách POI candidates
+            first_place_idx: Index của POI đầu tiên được chỉ định (None = auto select)
+            distance_matrix: Ma trận khoảng cách [user_location, poi1, poi2, ...]
+            max_distance: Khoảng cách lớn nhất trong matrix (để normalize)
+            transportation_mode: "DRIVING", "WALKING", hoặc "BICYCLING"
+            current_datetime: Thời điểm bắt đầu (None = không validate opening hours)
+            should_insert_restaurant_for_meal: True = loại trừ Restaurant khỏi candidates đầu
+            
         Returns:
-            Index của POI đầu tiên hoặc None nếu không tìm thấy
+            Index của POI đầu tiên (0-based trong places list) hoặc None nếu không tìm thấy
+            
+        Note:
+            - POI đầu tiên KHÔNG ĐƯỢC LÀ Restaurant nếu should_insert_restaurant_for_meal = True
+            - Vì Restaurant cần được chèn vào đúng meal window, không phải đầu route
         """
         if first_place_idx is not None:
             return first_place_idx
@@ -139,10 +202,30 @@ class BaseRouteBuilder:
         current_datetime: Optional[datetime]
     ) -> Tuple[bool, bool]:
         """
-        Kiểm tra xem POI đầu có phải Restaurant trong meal window không
+        Kiểm tra xem POI đầu tiên có phải là Restaurant đã thỏa mãn meal requirement không
         
+        Nếu POI đầu tiên là Restaurant VÀ arrival time rơi vào meal window
+        → Đánh dấu đã insert Restaurant cho meal đó (không cần insert thêm)
+        
+        Args:
+            first_poi_idx: Index của POI đầu tiên
+            places: Danh sách POI
+            should_insert_restaurant_for_meal: True nếu có meal requirement
+            meal_windows: Dict chứa lunch/dinner windows
+            distance_matrix: Ma trận khoảng cách
+            transportation_mode: Phương tiện di chuyển
+            current_datetime: Thời điểm bắt đầu
+            
         Returns:
-            (lunch_restaurant_inserted, dinner_restaurant_inserted)
+            Tuple (lunch_restaurant_inserted, dinner_restaurant_inserted)
+            - lunch_restaurant_inserted: True nếu POI đầu là Restaurant trong lunch window
+            - dinner_restaurant_inserted: True nếu POI đầu là Restaurant trong dinner window
+            
+        Note:
+            Chỉ đánh dấu khi:
+            1. should_insert_restaurant_for_meal = True
+            2. POI đầu có category = "Restaurant"
+            3. arrival_time rơi vào lunch window (11:00-14:00) hoặc dinner window (17:00-20:00)
         """
         lunch_inserted = False
         dinner_inserted = False
@@ -193,10 +276,37 @@ class BaseRouteBuilder:
         dinner_restaurant_inserted: bool
     ) -> Optional[int]:
         """
-        Chọn POI cuối cùng gần user
+        Chọn POI cuối cùng gần user location để giảm thời gian về
         
+        Strategy:
+        1. Thử các radius threshold từ nhỏ đến lớn: [0.5, 0.75, 1.0, 1.5, 2.0] × max_radius
+        2. Ở mỗi threshold, chọn POI có combined_score cao nhất
+        3. Validate opening hours và time budget
+        4. Loại trừ Restaurant nếu đã insert cho meal time rồi
+        
+        Args:
+            places: Danh sách POI
+            visited: Set các POI đã dùng
+            current_pos: Vị trí hiện tại trong distance_matrix
+            distance_matrix: Ma trận khoảng cách
+            max_radius: Khoảng cách xa nhất từ user đến POI (để tính threshold)
+            transportation_mode: Phương tiện di chuyển
+            max_distance: Khoảng cách lớn nhất (để normalize)
+            total_travel_time: Tổng travel time hiện tại
+            total_stay_time: Tổng stay time hiện tại
+            max_time_minutes: Time budget tối đa
+            current_datetime: Thời điểm bắt đầu
+            should_insert_restaurant_for_meal: True nếu có meal requirement
+            meal_windows: Dict meal windows
+            lunch_restaurant_inserted: True nếu đã insert lunch restaurant
+            dinner_restaurant_inserted: True nếu đã insert dinner restaurant
+            
         Returns:
-            Index của POI cuối hoặc None
+            Index của POI cuối (0-based) hoặc None nếu không tìm thấy
+            
+        Note:
+            - POI cuối ưu tiên gần user để giảm return_time
+            - Nếu POI cuối là Restaurant và arrival rơi vào meal window đã insert → Bỏ qua
         """
         best_last = None
         best_last_score = -1
@@ -305,10 +415,32 @@ class BaseRouteBuilder:
         total_stay_time: float
     ) -> Dict[str, Any]:
         """
-        Format kết quả route thành dict
+        Format route thành cấu trúc JSON chuẩn để trả về cho client
         
+        Tính toán và bổ sung thông tin cho mỗi POI:
+        - travel_time: Thời gian di chuyển từ POI trước
+        - stay_time: Thời gian lưu trú tại POI
+        - combined_score: Score kết hợp giữa similarity và distance
+        
+        Args:
+            route: List các index POI trong route (0-based)
+            places: Danh sách POI gốc
+            distance_matrix: Ma trận khoảng cách
+            transportation_mode: Phương tiện di chuyển
+            max_distance: Khoảng cách lớn nhất (để normalize score)
+            total_travel_time: Tổng thời gian di chuyển
+            total_stay_time: Tổng thời gian lưu trú
+            
         Returns:
-            Dict chứa thông tin route đầy đủ
+            Dict chứa:
+            - route: List index POI
+            - total_time_minutes: Tổng thời gian (travel + stay)
+            - travel_time_minutes: Tổng travel time
+            - stay_time_minutes: Tổng stay time
+            - total_score: Tổng similarity score
+            - avg_score: Average similarity score
+            - efficiency: (total_score / total_time) × 100
+            - places: List POI đầy đủ thông tin (place_id, name, category, travel_time, etc.)
         """
         route_places = []
         prev_pos = 0

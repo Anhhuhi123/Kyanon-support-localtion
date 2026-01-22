@@ -1,5 +1,18 @@
 """
 Target Route Builder - Xây dựng route với số lượng POI cố định (target_places)
+
+Module này định nghĩa TargetRouteBuilder - builder chuyên dụng cho chế độ xây dựng route
+với số lượng POI được chỉ định trước (target_places).
+
+Đặc điểm:
+- Số POI cố định: target_places (ví dụ: 5 POI)
+- Cấu trúc route: POI đầu → (target_places - 2) POI giữa → POI cuối
+- Xen kẽ category: Tự động alternate giữa các category (Cafe → Restaurant → Cafe)
+- Meal logic: Tự động chèn Restaurant vào lunch/dinner window nếu cần
+- Opening hours: Validate mở cửa cho tất cả POI
+
+Author: Kyanon Team
+Created: 2026-01
 """
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
@@ -8,10 +21,31 @@ from .route_builder_base import BaseRouteBuilder
 
 class TargetRouteBuilder(BaseRouteBuilder):
     """
-    Route Builder cho chế độ target_places
-    - Xây dựng route với số lượng POI cố định
-    - Áp dụng logic xen kẽ category
-    - Chèn Restaurant vào meal time nếu cần
+    Route Builder cho chế độ target_places (số POI cố định)
+    
+    Workflow:
+    1. select_first_poi() → Chọn POI đầu tiên (combined_score cao nhất)
+    2. Loop (target_places - 2) lần:
+       - _select_middle_poi() → Chọn POI giữa với category alternation
+       - Ưu tiên Restaurant nếu arrival rơi vào meal window
+    3. select_last_poi() → Chọn POI cuối gần user
+    4. format_route_result() → Format JSON response
+    
+    Đặc điểm:
+    - FOR LOOP cố định: Chính xác (target_places - 2) POI giữa
+    - Category xen kẽ: Cafe → Restaurant → Cafe → ...
+    - Meal priority: Nếu arrival trong lunch/dinner window → Ưu tiên Restaurant
+    - Fallback: Nếu hết POI category yêu cầu → Bỏ category constraint
+    
+    Example:
+        >>> builder = TargetRouteBuilder(geo, validator, calculator)
+        >>> route = builder.build_route(
+        ...     user_location=(21.028, 105.852),
+        ...     places=semantic_places,
+        ...     transportation_mode="DRIVING",
+        ...     max_time_minutes=180,
+        ...     target_places=5  # Luôn trả về 5 POI nếu feasible
+        ... )
     """
     
     def build_route(
@@ -27,21 +61,42 @@ class TargetRouteBuilder(BaseRouteBuilder):
         max_distance: Optional[float] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Xây dựng route với số lượng POI cố định
+        Xây dựng route với SỐ LƯỢNG POI CỐ ĐỊNH (target_places)
+        
+        Flow:
+        1. Build distance matrix (nếu chưa có)
+        2. Phân tích meal requirements → should_insert_restaurant_for_meal
+        3. Chọn POI đầu (score + distance cao nhất, loại Restaurant nếu có meal requirement)
+        4. FOR LOOP (target_places - 2) lần → Chọn POI giữa:
+           - Xen kẽ category (Cafe → Restaurant → Cafe)
+           - Ưu tiên Restaurant khi arrival rơi vào meal window
+           - Validate opening hours
+        5. Chọn POI cuối gần user
+        6. Validate time budget: total_time <= max_time_minutes
+        7. Format result
         
         Args:
             user_location: (lat, lon) của user
-            places: Danh sách địa điểm
-            transportation_mode: Phương tiện di chuyển
-            max_time_minutes: Thời gian tối đa (phút)
-            target_places: Số địa điểm muốn đi (cố định)
-            first_place_idx: Index điểm xuất phát (None = tự động)
-            current_datetime: Thời điểm hiện tại
-            distance_matrix: Ma trận khoảng cách (tính sẵn)
-            max_distance: Khoảng cách tối đa (tính sẵn)
+            places: Danh sách POI candidates từ semantic search
+            transportation_mode: "DRIVING", "WALKING", "BICYCLING"
+            max_time_minutes: Time budget tối đa (phút)
+            target_places: SỐ POI MUỐN ĐI (cố định, ví dụ: 5)
+            first_place_idx: Index POI đầu (None = auto select)
+            current_datetime: Thời điểm bắt đầu (để validate opening hours)
+            distance_matrix: Ma trận khoảng cách (pre-computed, optional)
+            max_distance: Max distance trong matrix (pre-computed, optional)
             
         Returns:
-            Dict thông tin route hoặc None nếu không khả thi
+            Dict chứa:
+            - route: List index POI
+            - total_time_minutes: Tổng thời gian
+            - places: List POI với đầy đủ thông tin
+            Hoặc None nếu không feasible (không đủ POI hoặc quá time budget)
+            
+        Note:
+            - Luôn trả về ĐÚNG target_places POI (nếu feasible)
+            - Nếu target_places > len(places) → Return None
+            - Nếu total_time > max_time_minutes → Return None
         """
         if target_places > len(places):
             return None

@@ -1,5 +1,22 @@
 """
 Duration Route Builder - Xây dựng route dựa trên thời gian tối đa (không cố định số POI)
+
+Module này định nghĩa DurationRouteBuilder - builder chuyên dụng cho chế độ xây dựng route
+dựa trên TIME BUDGET thay vì số lượng POI cố định.
+
+Đặc điểm:
+- Số POI linh hoạt: Không cố định, tùy thuộc vào time budget
+- Stop condition: Khi remaining_time < 30% max_time → Chọn POI cuối
+- WHILE LOOP: Tiếp tục thêm POI cho đến khi hết thời gian
+- Meal logic: Tự động chèn Restaurant vào lunch/dinner window
+- Opening hours: Validate mở cửa cho tất cả POI
+
+Constants:
+    TIME_THRESHOLD_FOR_LAST_POI = 0.3 (30%)
+    Khi remaining_time < 30% max_time → Dừng và chọn POI cuối
+
+Author: Kyanon Team
+Created: 2026-01
 """
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
@@ -9,10 +26,34 @@ from .route_builder_base import BaseRouteBuilder
 
 class DurationRouteBuilder(BaseRouteBuilder):
     """
-    Route Builder cho chế độ duration
-    - Không cố định số lượng POI (target_places)
-    - Tự động thêm POI cho đến khi còn < 30% thời gian
-    - Sau đó chọn POI cuối gần user
+    Route Builder cho chế độ duration (TIME BUDGET, không cố định số POI)
+    
+    Workflow:
+    1. select_first_poi() → Chọn POI đầu tiên
+    2. WHILE LOOP:
+       - Check remaining_time < 30% max_time → Break và chọn POI cuối
+       - _select_middle_poi() → Chọn POI giữa (category alternation + meal priority)
+       - Validate opening hours
+       - Update time counters
+    3. select_last_poi() → Chọn POI cuối gần user
+    4. format_route_result() → Format JSON response
+    
+    Đặc điểm:
+    - WHILE LOOP: Không cố định số POI, loop cho đến khi còn < 30% thời gian
+    - Linh hoạt: Route có thể có 3, 5, 7 POI... tùy thuộc vào time budget
+    - Stop early: Nếu remaining_time < 30% → Chọn POI cuối để về
+    - Meal logic: Giống target mode, tự động insert Restaurant
+    
+    Example:
+        >>> builder = DurationRouteBuilder(geo, validator, calculator)
+        >>> route = builder.build_route(
+        ...     user_location=(21.028, 105.852),
+        ...     places=semantic_places,
+        ...     transportation_mode="DRIVING",
+        ...     max_time_minutes=240  # 4 hours
+        ...     # Số POI không cố định, tùy vào time budget
+        ... )
+        >>> print(f"Route có {len(route['places'])} POI")  # Có thể là 5, 6, 7...
     """
     
     TIME_THRESHOLD_FOR_LAST_POI = 0.3  # 30% thời gian còn lại
@@ -29,20 +70,39 @@ class DurationRouteBuilder(BaseRouteBuilder):
         max_distance: Optional[float] = None
     ) -> Optional[Dict[str, Any]]:
         """
-        Xây dựng route dựa trên thời gian tối đa
+        Xây dựng route DỰA TRÊN TIME BUDGET (số POI linh hoạt)
+        
+        Flow:
+        1. Build distance matrix
+        2. Phân tích meal requirements
+        3. Chọn POI đầu
+        4. WHILE LOOP:
+           - Calculate remaining_time = max_time - (travel + stay)
+           - IF remaining_time < 30% max_time → BREAK
+           - ELSE → _select_middle_poi() và thêm vào route
+        5. Chọn POI cuối gần user
+        6. Validate time budget
+        7. Format result
         
         Args:
             user_location: (lat, lon) của user
-            places: Danh sách địa điểm
-            transportation_mode: Phương tiện di chuyển
-            max_time_minutes: Thời gian tối đa (phút)
-            first_place_idx: Index điểm xuất phát (None = tự động)
-            current_datetime: Thời điểm hiện tại
-            distance_matrix: Ma trận khoảng cách (tính sẵn)
-            max_distance: Khoảng cách tối đa (tính sẵn)
+            places: Danh sách POI candidates
+            transportation_mode: "DRIVING", "WALKING", "BICYCLING"
+            max_time_minutes: TIME BUDGET tối đa (phút)
+            first_place_idx: Index POI đầu (None = auto)
+            current_datetime: Thời điểm bắt đầu
+            distance_matrix: Ma trận khoảng cách (optional)
+            max_distance: Max distance (optional)
             
         Returns:
-            Dict thông tin route hoặc None nếu không khả thi
+            Dict chứa route info hoặc None nếu không feasible
+            - Số POI KHÔNG CỐ ĐỊNH (có thể 3, 5, 7... tùy time budget)
+            - Loop cho đến khi remaining_time < 30%
+            
+        Note:
+            - Khác với TargetRouteBuilder: WHILE LOOP thay vì FOR LOOP
+            - Stop condition: remaining_time < TIME_THRESHOLD_FOR_LAST_POI (30%)
+            - Ví dụ: max_time=180 → Dừng khi còn < 54 phút
         """
         if not places:
             return None
