@@ -267,11 +267,11 @@ Time: 11:30 - 14:30
 
 ---
 
-## 🎲 Quy Luật Chọn POI
+## 🎲 Quy Luật Chọn POI (tỉ lệ distance_score, rating_score có thể điều chỉnh)
 
 ### 1. POI Đầu Tiên (Starting POI)
 
-**Mục tiêu:** Chọn POI gần user, có rating cao, phù hợp với semantic query
+**Mục tiêu:** Chọn POI gần user, có rating cao, phù hợp với semantic query ( thể loại phù hợp vơi interest)
 
 **Score Formula:**
 ```python
@@ -303,8 +303,7 @@ POI B: Restaurant xa user (2km), rating 4.8, similarity 0.92
 ```
 
 **Lưu ý đặc biệt:**
-- Nếu đang trong chế độ meal time auto-insert → **KHÔNG chọn Restaurant làm POI đầu**
-- Luôn validate opening hours (nếu có `current_time`)
+- Luôn validate opening hours (nếu có `current_time`) (luôn đảm bảo thời gian đi tới phù hợp với thời gian mở cửa)
 
 ---
 
@@ -315,7 +314,7 @@ POI B: Restaurant xa user (2km), rating 4.8, similarity 0.92
 - Hướng về phía user (bearing score)
 - Balance giữa similarity và rating
 
-**Score Formula - Khi Similarity ≥ 0.8:**
+**Score Formula - Khi Similarity (tức là độ phù hợp của POI với option interest của người dùng) ≥ 0.8:**
 ```python
 combined_score = (
     0.15 * distance_score    +  # 15% - Không quá xa
@@ -335,7 +334,7 @@ combined_score = (
 )
 ```
 
-**Bearing Score:**
+**Bearing Score (công thức tạo vòng cung):**
 ```python
 bearing_score = 1 - (angle_diff / 180)
 
@@ -455,7 +454,7 @@ POI B: Restaurant, 1.5km từ user, similarity 0.88, rating 4.5
 
 **Kết quả:**
 - Expand thành: `[Cafe & Bakery, Restaurant, Culture & heritage]`
-- routes, mỗi route 7 POI
+- routes, mỗi route n POI
 - Xen kẽ 3 loại category
 - Lọc POI đang mở cửa lúc 8:00 sáng
 - Thời gian: ~6 giờ
@@ -485,8 +484,8 @@ Start: 10:00
 ├─ 10:20-10:50: Culture POI 1 (30 phút)
 ├─ 10:50-11:05: Di chuyển đến POI 2
 ├─ 11:05-11:35: Culture POI 2 (30 phút)
-├─ 11:35-11:50: Di chuyển đến Restaurant
-├─ 11:50-12:50: Restaurant (60 phút) ← Meal time
+├─ 11:35-12:00: Di chuyển đến Restaurant
+├─ 12:00-12:50: Restaurant ← Meal time
 ├─ 12:50-13:10: Di chuyển đến POI 4
 ├─ 13:10-13:40: Culture POI 4 (30 phút)
 └─ Finish: ~14:00
@@ -507,7 +506,7 @@ Start: 10:00
 **Kết quả:**
 - Expand: `[Cafe & Bakery, Restaurant, Nature & View, Shopping]`
 - 4 categories
-- Mỗi route 8 POI xen kẽ 4 loại
+- Mỗi route n POI xen kẽ 4 loại
 - Driving speed (40 km/h) → Có thể đi xa hơn
 
 ---
