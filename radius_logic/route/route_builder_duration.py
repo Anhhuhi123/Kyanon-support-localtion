@@ -107,6 +107,20 @@ class DurationRouteBuilder(BaseRouteBuilder):
         if not places:
             return None
         
+        # 0. Kiểm tra số lượng POI theo category - nếu mỗi category <= 3 POI thì không build
+        category_counts = {}
+        for place in places:
+            category = place.get('category')
+            if category:
+                category_counts[category] = category_counts.get(category, 0) + 1
+        
+        if category_counts:
+            max_count_per_category = max(category_counts.values())
+            if max_count_per_category <= 1:
+                print(f"⚠️ Số lượng POI quá ít (mỗi category <= 3): {category_counts}")
+                print("   → Không build route, trả về rỗng\n")
+                return None
+        
         # 1. Xây dựng distance matrix
         if distance_matrix is None:
             distance_matrix = self.geo.build_distance_matrix(user_location, places)
@@ -123,6 +137,17 @@ class DurationRouteBuilder(BaseRouteBuilder):
         meal_windows = meal_info["meal_windows"]
         need_lunch_restaurant = meal_info["need_lunch_restaurant"]
         need_dinner_restaurant = meal_info["need_dinner_restaurant"]
+        
+        # Print thông báo meal time overlap
+        if should_insert_restaurant_for_meal:
+            print("\n" + "="*60)
+            print("🍽️  MEAL TIME ANALYSIS (Duration Mode)")
+            print("="*60)
+            if need_lunch_restaurant:
+                print("✅ Overlap với LUNCH TIME (11:00-14:00) >= 60 phút")
+            if need_dinner_restaurant:
+                print("✅ Overlap với DINNER TIME (17:00-20:00) >= 60 phút")
+            print("="*60 + "\n")
         
         # 3. Chọn điểm đầu tiên
         best_first = self.select_first_poi(
@@ -161,6 +186,23 @@ class DurationRouteBuilder(BaseRouteBuilder):
             distance_matrix, transportation_mode, current_datetime
         )
         
+        # Print thông báo POI đầu
+        if should_insert_restaurant_for_meal:
+            first_poi = places[best_first]
+            is_restaurant = first_poi.get('category') == 'Restaurant'
+            print("🔍 Kiểm tra POI đầu tiên:")
+            print(f"   - Tên: {first_poi.get('name', 'N/A')}")
+            print(f"   - Category: {first_poi.get('category', 'N/A')}")
+            if is_restaurant and (lunch_restaurant_inserted or dinner_restaurant_inserted):
+                print("   ✅ POI đầu là RESTAURANT trong meal time!")
+                if lunch_restaurant_inserted:
+                    print("      → Đã tính là Restaurant cho LUNCH")
+                if dinner_restaurant_inserted:
+                    print("      → Đã tính là Restaurant cho DINNER")
+            else:
+                print("   ℹ️  POI đầu KHÔNG phải Restaurant trong meal time")
+            print()
+        
         # 4. Chọn các POI giữa - VÒNG LẶP cho đến khi còn < 30% thời gian
         max_iterations = len(places)
         iteration = 0
@@ -189,15 +231,19 @@ class DurationRouteBuilder(BaseRouteBuilder):
                 print(f"⚠️ Không tìm được POI phù hợp → Chọn POI cuối")
                 break
             
+            # Lấy POI index trước
+            poi_idx = best_next['index']
+            
             # Update restaurant insertion flags
             if best_next['target_meal_type']:
                 if best_next['target_meal_type'] == 'lunch':
                     lunch_restaurant_inserted = True
+                    print(f"🍽️  ✅ Đã chèn RESTAURANT cho LUNCH (POI #{len(route)+1}: {places[poi_idx].get('name', 'N/A')})")
                 elif best_next['target_meal_type'] == 'dinner':
                     dinner_restaurant_inserted = True
+                    print(f"🍽️  ✅ Đã chèn RESTAURANT cho DINNER (POI #{len(route)+1}: {places[poi_idx].get('name', 'N/A')})")
             
             # Thêm POI vào route
-            poi_idx = best_next['index']
             route.append(poi_idx)
             visited.add(poi_idx)
             
