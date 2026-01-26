@@ -404,7 +404,8 @@ class BaseRouteBuilder:
                     transportation_mode
                 )
                 temp_stay = total_stay_time + self.calculator.get_stay_time(
-                    places[i].get("poi_type", "")
+                    places[i].get("poi_type", ""),
+                    places[i].get("stay_time")
                 )
                 return_time = self.calculator.calculate_travel_time(
                     dist_to_user, transportation_mode
@@ -482,7 +483,10 @@ class BaseRouteBuilder:
                 distance_matrix[prev_pos][place_idx + 1],
                 transportation_mode
             )
-            stay_time = self.calculator.get_stay_time(place.get("poi_type", ""))
+            stay_time = self.calculator.get_stay_time(
+                place.get("poi_type", ""),
+                place.get("stay_time")
+            )
             
             is_first_poi = (i == 0)
             is_last_poi = (i == len(route) - 1)

@@ -168,7 +168,10 @@ class DurationRouteBuilder(BaseRouteBuilder):
             distance_matrix[0][best_first + 1],
             transportation_mode
         )
-        stay_time = self.calculator.get_stay_time(places[best_first].get("poi_type", ""))
+        stay_time = self.calculator.get_stay_time(
+            places[best_first].get("poi_type", ""),
+            places[best_first].get("stay_time")
+        )
         total_travel_time = travel_time
         total_stay_time = stay_time
         
@@ -255,7 +258,10 @@ class DurationRouteBuilder(BaseRouteBuilder):
                 distance_matrix[current_pos][poi_idx + 1],
                 transportation_mode
             )
-            stay_time = self.calculator.get_stay_time(places[poi_idx].get("poi_type", ""))
+            stay_time = self.calculator.get_stay_time(
+                places[poi_idx].get("poi_type", ""),
+                places[poi_idx].get("stay_time")
+            )
             total_travel_time += travel_time
             total_stay_time += stay_time
             
@@ -289,7 +295,10 @@ class DurationRouteBuilder(BaseRouteBuilder):
                 distance_matrix[current_pos][best_last + 1],
                 transportation_mode
             )
-            stay_time = self.calculator.get_stay_time(places[best_last].get("poi_type", ""))
+            stay_time = self.calculator.get_stay_time(
+                places[best_last].get("poi_type", ""),
+                places[best_last].get("stay_time")
+            )
             total_travel_time += travel_time
             total_stay_time += stay_time
             current_pos = best_last + 1
@@ -411,7 +420,8 @@ class DurationRouteBuilder(BaseRouteBuilder):
                 transportation_mode
             )
             temp_stay = total_stay_time + self.calculator.get_stay_time(
-                places[i].get("poi_type", "")
+                places[i].get("poi_type", ""),
+                places[i].get("stay_time")
             )
             estimated_return = self.calculator.calculate_travel_time(
                 distance_matrix[i + 1][0],
@@ -469,7 +479,8 @@ class DurationRouteBuilder(BaseRouteBuilder):
                     transportation_mode
                 )
                 temp_stay = total_stay_time + self.calculator.get_stay_time(
-                    places[i].get("poi_type", "")
+                    places[i].get("poi_type", ""),
+                    places[i].get("stay_time")
                 )
                 estimated_return = self.calculator.calculate_travel_time(
                     distance_matrix[i + 1][0],

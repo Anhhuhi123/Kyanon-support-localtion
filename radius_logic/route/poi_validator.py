@@ -9,10 +9,14 @@ from .route_config import RouteConfig
 
 class POIValidator:
 
-    def get_stay_time(self, poi_type: str) -> int:  
-        """Lấy thời gian tham quan cố định (phút)"""
-        return RouteConfig.DEFAULT_STAY_TIME
+    def get_stay_time(self, place: Dict[str, Any]) -> float:
+        stay = place.get("stay_time")
+        try:
+            return float(stay) if stay is not None else RouteConfig.DEFAULT_STAY_TIME
+        except (TypeError, ValueError):
+            return RouteConfig.DEFAULT_STAY_TIME
 
+    
     def is_poi_available_at_time(
         self,
         place: Dict[str, Any],
@@ -31,7 +35,7 @@ class POIValidator:
         if not arrival_datetime:
             return True
         
-        stay_time = self.get_stay_time(place.get("poi_type", ""))
+        stay_time = self.get_stay_time(place)
         return TimeUtils.has_enough_time_to_stay(
             place.get('open_hours', []), 
             arrival_datetime, 

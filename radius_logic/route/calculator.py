@@ -25,16 +25,12 @@ class Calculator:
         speed = RouteConfig.TRANSPORTATION_SPEEDS.get(transportation_mode.upper(), 30)
         return (distance_km / speed) * 60  # Chuyển giờ sang phút
     
-    def get_stay_time(self, poi_type: str) -> int:
-        """
-        Lấy thời gian tham quan cố định (phút)
-        
-        Args:
-            poi_type: Loại POI (không sử dụng)
-            
-        Returns:
-            Thời gian tham quan cố định 30 phút
-        """
+    def get_stay_time(self, poi_type: str, stay_time: Optional[float] = None) -> float:
+        if stay_time is not None:
+            try:
+                return float(stay_time)
+            except (TypeError, ValueError):
+                pass
         return RouteConfig.DEFAULT_STAY_TIME
 
     def calculate_combined_score(
