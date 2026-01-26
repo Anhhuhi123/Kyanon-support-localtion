@@ -1,5 +1,6 @@
 import sys
 import os
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
 from fastapi import APIRouter, HTTPException
@@ -7,12 +8,23 @@ from pydantics.user import UserIdRequest
 from pydantics.poi import ConfirmReplaceRequest, PoiRequest
 from services.poi_service import PoiService
 from services.ingest_poi_to_qdrant import IngestPoiToQdrantService
+from services.route_service import RouteService
 router = APIRouter(prefix="/api/v1/poi", tags=["Poi"])
 
 # Service instance sẽ được set từ server.py startup event
 poi_service: PoiService = None
-search_service = None  # Will be set from server.py
+search_service : RouteService = None  # Will be set from server.py
 ingest_qdrant_service: IngestPoiToQdrantService = None  # Will be set from server.py
+
+def get_search_service():
+    """Lấy singleton instance của search service"""
+    global search_service
+    if search_service is None:
+        raise HTTPException(
+            status_code=500, 
+            detail="Search service not initialized. Server may not have completed startup."
+        )
+    return search_service
 
 @router.post("/visited")
 async def get_poi_visited(user_id: UserIdRequest):
@@ -48,11 +60,10 @@ async def confirm_replace_poi(req: ConfirmReplaceRequest):
     Returns:
         Dict chứa thông tin route đã được cập nhật
     """
-    if search_service is None:
-        raise HTTPException(status_code=500, detail="Search service not initialized")
+    service = get_search_service()
     
     try:
-        result = await search_service.confirm_replace_poi(
+        result = await service.confirm_replace_poi(
             user_id=req.user_id,
             route_id=req.route_id,
             old_poi_id=req.old_poi_id,

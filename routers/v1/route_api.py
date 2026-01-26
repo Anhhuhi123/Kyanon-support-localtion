@@ -6,7 +6,7 @@ import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 from fastapi import APIRouter, HTTPException
-from services.route_service import SemanticSearchService
+from services.route_service import RouteService
 from pydantics.route import SemanticSearchRequest, CombinedSearchRequest, RouteSearchRequest, UpdatePOIRequest
 
 # Initialize router
@@ -15,12 +15,12 @@ router = APIRouter(prefix="/api/v1/route", tags=["Route Search (Qdrant)"])
 _route_service_instance = None
 
 def get_semantic_service():
-    """Lấy singleton instance của SemanticSearchService"""
+    """Lấy singleton instance của RouteService"""
     global _route_service_instance
     if _route_service_instance is None:
         # Fallback: nếu chưa init từ startup, init ngay
-        from services.route_service import SemanticSearchService
-        _route_service_instance = SemanticSearchService()
+        from services.route_service import RouteService
+        _route_service_instance = RouteService()
     return _route_service_instance
 
 
@@ -54,7 +54,7 @@ async def semantic_search(request: SemanticSearchRequest):
 
 
 @router.post("/combined")
-async def combined_search(request: CombinedSearchRequest):
+async def spatial_search(request: CombinedSearchRequest):
     """
     Tìm kiếm kết hợp: Spatial (PostGIS) + Semantic (Qdrant)
     
@@ -208,9 +208,9 @@ async def route_search(request: RouteSearchRequest):
 
 
 @router.post("/replace-poi")
-async def update_poi(request: UpdatePOIRequest):
+async def replace_poi(request: UpdatePOIRequest):
     """
-    Update POI trong route đã có bằng POI khác cùng category
+    Replace POI trong route đã có bằng POI khác cùng category
     
     Workflow:
     1. Lấy route metadata từ Redis cache
@@ -249,7 +249,7 @@ async def update_poi(request: UpdatePOIRequest):
         }
     """
     try:
-        result = await get_semantic_service().update_poi_in_route(
+        result = await get_semantic_service().replace_poi(
             user_id=request.user_id,
             route_id=request.route_id,
             poi_id_to_replace=request.poi_id_to_replace,

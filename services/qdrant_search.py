@@ -12,7 +12,7 @@ from radius_logic.information_location import LocationInfoService
 from qdrant_client.models import Filter, FieldCondition, MatchAny
 
 
-class SemanticSearchBase:
+class QdrantSearch:
     """Base service cho semantic search với Qdrant"""
     
     # Singleton instances shared across all service layers
@@ -36,19 +36,19 @@ class SemanticSearchBase:
         # Use shared instances to avoid duplicate loading
         if vector_store is not None:
             self.vector_store = vector_store
-        elif SemanticSearchBase._vector_store is None:
-            SemanticSearchBase._vector_store = QdrantVectorStore()
-            self.vector_store = SemanticSearchBase._vector_store
+        elif QdrantSearch._vector_store is None:
+            QdrantSearch._vector_store = QdrantVectorStore()
+            self.vector_store = QdrantSearch._vector_store
         else:
-            self.vector_store = SemanticSearchBase._vector_store
+            self.vector_store = QdrantSearch._vector_store
             
         if embedder is not None:
             self.embedder = embedder
-        elif SemanticSearchBase._embedder is None:
-            SemanticSearchBase._embedder = EmbeddingGenerator()
-            self.embedder = SemanticSearchBase._embedder
+        elif QdrantSearch._embedder is None:
+            QdrantSearch._embedder = EmbeddingGenerator()
+            self.embedder = QdrantSearch._embedder
         else:
-            self.embedder = SemanticSearchBase._embedder
+            self.embedder = QdrantSearch._embedder
             
         self.location_info_service = LocationInfoService(db_pool=db_pool, redis_client=redis_client)
     
@@ -118,11 +118,14 @@ class SemanticSearchBase:
             
             # 5. Merge semantic score với location info
             results = []
-            for hit in search_results:
+            # Gán lại score theo thứ tự cố định: 0.94, 0.92, 0.9, 0.88...
+            fixed_scores = [0.94 - (i * 0.02) for i in range(top_k)]
+            
+            for idx, hit in enumerate(search_results):
                 location_info = locations_map.get(hit.id)
                 if location_info:
                     result = {
-                        "score": hit.score,
+                        "score": fixed_scores[idx],  # Dùng fixed score thay vì hit.score
                         **location_info  # Merge tất cả fields từ DB (bao gồm poi_type)
                     }
                     results.append(result)
@@ -230,11 +233,14 @@ class SemanticSearchBase:
             
             # 5. Merge semantic score với location info
             results = []
-            for hit in search_results:
+            # Gán lại score theo thứ tự cố định: 0.94, 0.92, 0.9, 0.88...
+            fixed_scores = [0.94 - (i * 0.02) for i in range(top_k)]
+            
+            for idx, hit in enumerate(search_results):
                 location_info = locations_map.get(hit.id)
                 if location_info:
                     result = {
-                        "score": hit.score,
+                        "score": fixed_scores[idx],  # Dùng fixed score thay vì hit.score
                         **location_info
                     }
                     
@@ -246,6 +252,13 @@ class SemanticSearchBase:
                             result["open_hours"] = spatial_match.get("open_hours", [])
                     
                     results.append(result)
+            
+            # ⚠️ CRITICAL: Sort để đảm bảo deterministic (phòng trường hợp Qdrant không sort)
+            # Sort theo: (1) score desc, (2) id asc (tie-breaker)
+            results = sorted(
+                results,
+                key=lambda x: (-x.get('score', 0), x.get('id', ''))
+            )
             
             return {
                 "status": "success",

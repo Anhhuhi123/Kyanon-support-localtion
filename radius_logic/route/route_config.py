@@ -25,31 +25,31 @@ class RouteConfig:
     
     # Score weights cho POI đầu tiên
     FIRST_POI_WEIGHTS = {
-        "distance": 0.1,
-        "similarity": 0.45,
-        "rating": 0.45
+        "distance": 0.5,
+        "similarity": 0.1,
+        "rating": 0.4
     }
     
     # Score weights cho POI cuối
     LAST_POI_WEIGHTS = {
-        "distance": 0.4,
-        "similarity": 0.3,
+        "distance": 0.6,
+        "similarity": 0.1,
         "rating": 0.3
     }
     
     # Score weights cho POI giữa (khi similarity >= 0.8)
     MIDDLE_POI_WEIGHTS_HIGH_SIMILARITY = {
-        "distance": 0.15,
-        "similarity": 0.3,
-        "rating": 0.3,
+        "distance": 0.4,
+        "similarity": 0.1,
+        "rating": 0.25,
         "bearing": 0.25
     }
     
     # Score weights cho POI giữa (khi similarity < 0.8)
     MIDDLE_POI_WEIGHTS_LOW_SIMILARITY = {
-        "distance": 0.25,
+        "distance": 0.4,
         "similarity": 0.1,
-        "rating": 0.4,
+        "rating": 0.25,
         "bearing": 0.25
     }
     
