@@ -8,12 +8,12 @@ from pydantics.user import UserIdRequest
 from pydantics.poi import ConfirmReplaceRequest, PoiRequest
 from services.poi_service import PoiService
 from services.ingest_poi_to_qdrant import IngestPoiToQdrantService
-from services.route_service import SemanticSearchService
+from services.route_service import RouteService
 router = APIRouter(prefix="/api/v1/poi", tags=["Poi"])
 
 # Service instance sẽ được set từ server.py startup event
 poi_service: PoiService = None
-search_service : SemanticSearchService = None  # Will be set from server.py
+search_service : RouteService = None  # Will be set from server.py
 ingest_qdrant_service: IngestPoiToQdrantService = None  # Will be set from server.py
 
 def get_search_service():

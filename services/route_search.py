@@ -8,13 +8,13 @@ from typing import Optional, Dict, Any
 from concurrent.futures import ProcessPoolExecutor
 import asyncpg
 import redis.asyncio as aioredis
-from services.combined_search import CombinedSearchService
-from services.cache_search import CacheSearchService
+from services.spatial_search import SpatialSearch
+from services.cache_search import CacheSearch
 from radius_logic.route import RouteBuilder
 from radius_logic.update_poi import POIUpdateService
 from uuid import UUID
 
-class RouteSearchService(CombinedSearchService):
+class RouteSearch(SpatialSearch):
     """
     Service xây dựng lộ trình từ kết quả search và quản lý POI replacement
     
@@ -40,7 +40,7 @@ class RouteSearchService(CombinedSearchService):
         super().__init__(db_pool, redis_client, vector_store, embedder)
         self.process_pool = process_pool
         self.route_builder = RouteBuilder()
-        self.cache_service = CacheSearchService(redis_client)
+        self.cache_service = CacheSearch(redis_client)
         self.poi_update_service = POIUpdateService()
     
     async def build_routes(
@@ -151,7 +151,7 @@ class RouteSearchService(CombinedSearchService):
             print(f"⏱️  Total execution time: {total_time:.3f}s")
             print(f"✅ Generated {len(routes)} route(s)")
             
-            # 🔥 Cache route metadata to Redis using CacheSearchService
+            # 🔥 Cache route metadata to Redis using CacheSearch
             if self.cache_service and user_id and routes:
                 await self.cache_service.cache_route_metadata(
                     user_id=user_id,

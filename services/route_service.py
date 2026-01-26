@@ -1,9 +1,9 @@
 """
 Semantic Search Service (Async Version - Facade Pattern)
 Facade service giữ backward compatibility, delegate logic tới các service chuyên biệt:
-- SemanticSearchBase: Core semantic search
-- CombinedSearchService: Spatial + semantic search
-- RouteSearchService: Route building with search + POI replacement
+- QdrantSearch: Core semantic search
+- SpatialSearch: Spatial + semantic search
+- RouteSearch: Route building with search + POI replacement
 """
 from datetime import datetime
 from typing import Optional, Dict, Any
@@ -11,12 +11,12 @@ from concurrent.futures import ProcessPoolExecutor
 import asyncpg
 import redis.asyncio as aioredis
 
-from services.qdrant_search import SemanticSearchBase
-from services.combined_search import CombinedSearchService
-from services.route_search import RouteSearchService
+from services.qdrant_search import QdrantSearch
+from services.spatial_search import SpatialSearch
+from services.route_search import RouteSearch
 from uuid import UUID
 
-class SemanticSearchService:
+class RouteService:
     """
     Facade service để giữ backward compatibility
     Delegate tất cả logic tới các service chuyên biệt
@@ -35,18 +35,18 @@ class SemanticSearchService:
             embedder: Shared EmbeddingGenerator instance
         """
         # Khởi tạo base service với shared vector_store & embedder
-        self.base_service = SemanticSearchBase(db_pool, redis_client, vector_store, embedder)
+        self.base_service = QdrantSearch(db_pool, redis_client, vector_store, embedder)
         
         # Get singleton instances từ base service
         vector_store = self.base_service.vector_store
         embedder = self.base_service.embedder
         
-        self.combined_service = CombinedSearchService(db_pool, redis_client, vector_store, embedder)
-        self.route_service = RouteSearchService(db_pool, redis_client, process_pool, vector_store, embedder)
+        self.combined_service = SpatialSearch(db_pool, redis_client, vector_store, embedder)
+        self.route_service = RouteSearch(db_pool, redis_client, process_pool, vector_store, embedder)
     
     async def search_by_query(self, query: str, top_k: int = 10) -> Dict[str, Any]:
         """
-        Delegate to SemanticSearchBase.search_by_query
+        Delegate to QdrantSearch.search_by_query
         Tìm kiếm địa điểm theo query ngữ nghĩa (không filter ID)
         """
         return await self.base_service.search_by_query(query, top_k)
@@ -59,7 +59,7 @@ class SemanticSearchService:
     #     spatial_results: Optional[List[Dict[str, Any]]] = None
     # ) -> Dict[str, Any]:
     #     """
-    #     Delegate to SemanticSearchBase.search_by_query_with_filter
+    #     Delegate to QdrantSearch.search_by_query_with_filter
     #     Tìm kiếm địa điểm theo query ngữ nghĩa với filter ID (dùng cho combined search)
     #     """
     #     return await self.base_service.search_by_query_with_filter(query, id_list, top_k, spatial_results)
@@ -73,7 +73,7 @@ class SemanticSearchService:
         top_k_semantic: int = 10
     ) -> Dict[str, Any]:
         """
-        Delegate to CombinedSearchService.search_combined
+        Delegate to SpatialSearch.search_combined
         Tìm kiếm kết hợp: Spatial search (PostGIS) + Semantic search (Qdrant)
         """
         return await self.combined_service.search_combined(
@@ -92,7 +92,7 @@ class SemanticSearchService:
     #     max_time_minutes: Optional[int] = None
     # ) -> Dict[str, Any]:
     #     """
-    #     Delegate to CombinedSearchService.search_multi_queries_and_find_locations
+    #     Delegate to SpatialSearch.search_multi_queries_and_find_locations
     #     Tìm kiếm kết hợp với hỗ trợ nhiều queries phân cách bằng dấu phẩy
     #     """
     #     return await self.combined_service.search_multi_queries_and_find_locations(
@@ -116,7 +116,7 @@ class SemanticSearchService:
         duration_mode: bool = False 
     ) -> Dict[str, Any]:
         """
-        Delegate to RouteSearchService.search_combined_with_routes
+        Delegate to RouteSearch.search_combined_with_routes
         Tìm kiếm kết hợp + Xây dựng lộ trình với tùy chọn lọc theo thời gian mở cửa
         """
         return await self.route_service.build_routes(
@@ -133,7 +133,7 @@ class SemanticSearchService:
         current_datetime: Optional[datetime] = None
     ) -> Dict[str, Any]:
         """
-        Delegate to RouteSearchService.replace_poi
+        Delegate to RouteSearch.replace_poi
         Replace POI trong route bằng POI khác cùng category
         """
         return await self.route_service.replace_poi(
@@ -148,7 +148,7 @@ class SemanticSearchService:
         new_poi_id: str
     ) -> Dict[str, Any]:
         """
-        Delegate to RouteSearchService.confirm_replace_poi
+        Delegate to RouteSearch.confirm_replace_poi
         Xác nhận thay thế POI và cập nhật cache
         """
         return await self.route_service.confirm_replace_poi(
@@ -171,7 +171,7 @@ class SemanticSearchService:
         duration_mode: bool = False
     ) -> Dict[str, Any]:
         """
-        Delegate to RouteSearchService.replace_route
+        Delegate to RouteSearch.replace_route
         Replace route: Xây dựng route mới, xoá route cũ
         """
         return await self.route_service.replace_route(

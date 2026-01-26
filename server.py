@@ -118,7 +118,7 @@ async def startup_event():
     # 2. Initialize AsyncQdrantClient và QdrantVectorStore
     from retrieval.qdrant_vector_store import QdrantVectorStore
     from retrieval.embeddings import EmbeddingGenerator
-    from services.route_service import SemanticSearchService
+    from services.route_service import RouteService
     from services.location_service import LocationService
     from services.poi_service import PoiService
     from services.ingest_poi_to_qdrant import IngestPoiToQdrantService
@@ -141,7 +141,7 @@ async def startup_event():
     embedder = EmbeddingGenerator()
     
     # 6. Khởi tạo services với async resources + shared vector_store & embedder
-    route_api_module._route_service_instance = SemanticSearchService(
+    route_api_module._route_service_instance = RouteService(
         db_pool=db_pool,
         redis_client=redis_client,
         vector_store=vector_store,

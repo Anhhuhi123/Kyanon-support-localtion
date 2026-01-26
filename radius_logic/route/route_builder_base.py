@@ -126,16 +126,20 @@ class BaseRouteBuilder:
         max_distance: float,
         transportation_mode: str,
         current_datetime: Optional[datetime],
-        should_insert_restaurant_for_meal: bool
+        should_insert_restaurant_for_meal: bool,
+        meal_windows: Optional[Dict] = None
     ) -> Optional[int]:
         """
         Chọn POI đầu tiên cho route dựa trên combined score (score + distance)
         
         Quy tắc chọn:
         1. Nếu first_place_idx được chỉ định → Dùng luôn
-        2. Nếu không → Chọn POI có combined_score cao nhất trong candidates
-        3. Validate opening hours nếu current_datetime được cung cấp
-        4. Loại trừ Restaurant nếu should_insert_restaurant_for_meal = True (để ưu tiên cho meal time)
+        2. Kiểm tra current_datetime có rơi vào meal window không:
+           - Nếu ĐÃ TRONG meal time → BẮT BUỘC chọn Restaurant
+           - Nếu CHƯA TỚI meal time nhưng có overlap → LOẠI Restaurant ra
+           - Nếu không overlap → Bình thường
+        3. Chọn POI có combined_score cao nhất trong candidates
+        4. Validate opening hours nếu current_datetime được cung cấp
         
         Combined score = 0.7 × normalized_score + 0.3 × (1 - normalized_distance)
         
@@ -146,17 +150,34 @@ class BaseRouteBuilder:
             max_distance: Khoảng cách lớn nhất trong matrix (để normalize)
             transportation_mode: "DRIVING", "WALKING", hoặc "BICYCLING"
             current_datetime: Thời điểm bắt đầu (None = không validate opening hours)
-            should_insert_restaurant_for_meal: True = loại trừ Restaurant khỏi candidates đầu
+            should_insert_restaurant_for_meal: True = có meal requirement
+            meal_windows: Dict chứa lunch/dinner windows
             
         Returns:
             Index của POI đầu tiên (0-based trong places list) hoặc None nếu không tìm thấy
             
         Note:
-            - POI đầu tiên KHÔNG ĐƯỢC LÀ Restaurant nếu should_insert_restaurant_for_meal = True
-            - Vì Restaurant cần được chèn vào đúng meal window, không phải đầu route
+            - Nếu ĐÃ TRONG meal time → BẮT BUỘC chọn Restaurant
+            - Nếu CHƯA TỚI meal time → LOẠI Restaurant ra (giữ cho meal time sau)
         """
         if first_place_idx is not None:
             return first_place_idx
+        
+        # Kiểm tra xem current_datetime có rơi vào meal window không
+        is_in_meal_time = False
+        if should_insert_restaurant_for_meal and current_datetime and meal_windows:
+            # Kiểm tra current_datetime có trong meal window không
+            if meal_windows.get('lunch'):
+                lunch_start, lunch_end = meal_windows['lunch']
+                if lunch_start <= current_datetime <= lunch_end:
+                    is_in_meal_time = True
+                    print(f"🍽️  Current time {current_datetime.strftime('%H:%M')} ĐÃ TRONG LUNCH TIME → BẮT BUỘC chọn Restaurant đầu")
+            
+            if not is_in_meal_time and meal_windows.get('dinner'):
+                dinner_start, dinner_end = meal_windows['dinner']
+                if dinner_start <= current_datetime <= dinner_end:
+                    is_in_meal_time = True
+                    print(f"🍽️  Current time {current_datetime.strftime('%H:%M')} ĐÃ TRONG DINNER TIME → BẮT BUỘC chọn Restaurant đầu")
         
         best_first = None
         best_first_score = -1
@@ -171,8 +192,18 @@ class BaseRouteBuilder:
                 if not self.validator.is_poi_available_at_time(place, arrival_time):
                     continue
             
-            if should_insert_restaurant_for_meal and place.get('category') == 'Restaurant':
-                continue
+            # Logic meal time cho POI đầu
+            if should_insert_restaurant_for_meal:
+                is_restaurant = place.get('category') == 'Restaurant'
+                
+                if is_in_meal_time:
+                    # Đã TRONG meal time → BẮT BUỘC chọn Restaurant
+                    if not is_restaurant:
+                        continue  # Bỏ qua POI không phải Restaurant
+                else:
+                    # CHƯA TỚI meal time → LOẠI Restaurant ra
+                    if is_restaurant:
+                        continue  # Bỏ qua Restaurant (giữ cho meal time sau)
             
             combined = self.calculator.calculate_combined_score(
                 place_idx=i,

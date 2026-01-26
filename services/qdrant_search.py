@@ -12,7 +12,7 @@ from radius_logic.information_location import LocationInfoService
 from qdrant_client.models import Filter, FieldCondition, MatchAny
 
 
-class SemanticSearchBase:
+class QdrantSearch:
     """Base service cho semantic search với Qdrant"""
     
     # Singleton instances shared across all service layers
@@ -36,19 +36,19 @@ class SemanticSearchBase:
         # Use shared instances to avoid duplicate loading
         if vector_store is not None:
             self.vector_store = vector_store
-        elif SemanticSearchBase._vector_store is None:
-            SemanticSearchBase._vector_store = QdrantVectorStore()
-            self.vector_store = SemanticSearchBase._vector_store
+        elif QdrantSearch._vector_store is None:
+            QdrantSearch._vector_store = QdrantVectorStore()
+            self.vector_store = QdrantSearch._vector_store
         else:
-            self.vector_store = SemanticSearchBase._vector_store
+            self.vector_store = QdrantSearch._vector_store
             
         if embedder is not None:
             self.embedder = embedder
-        elif SemanticSearchBase._embedder is None:
-            SemanticSearchBase._embedder = EmbeddingGenerator()
-            self.embedder = SemanticSearchBase._embedder
+        elif QdrantSearch._embedder is None:
+            QdrantSearch._embedder = EmbeddingGenerator()
+            self.embedder = QdrantSearch._embedder
         else:
-            self.embedder = SemanticSearchBase._embedder
+            self.embedder = QdrantSearch._embedder
             
         self.location_info_service = LocationInfoService(db_pool=db_pool, redis_client=redis_client)
     

@@ -7,13 +7,13 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any
 import asyncpg
 import redis.asyncio as aioredis
-from services.qdrant_search import SemanticSearchBase
+from services.qdrant_search import QdrantSearch
 from services.location_service import LocationService
 from services.poi_service import PoiService
 from utils.time_utils import TimeUtils
 from uuid import UUID
 
-class CombinedSearchService(SemanticSearchBase):
+class SpatialSearch(QdrantSearch):
     """Service kết hợp spatial + semantic search"""
     
     def __init__(self, db_pool: asyncpg.Pool = None, redis_client: aioredis.Redis = None,

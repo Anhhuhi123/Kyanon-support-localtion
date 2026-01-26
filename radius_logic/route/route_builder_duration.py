@@ -152,7 +152,8 @@ class DurationRouteBuilder(BaseRouteBuilder):
         # 3. Chọn điểm đầu tiên
         best_first = self.select_first_poi(
             places, first_place_idx, distance_matrix, max_distance,
-            transportation_mode, current_datetime, should_insert_restaurant_for_meal
+            transportation_mode, current_datetime, should_insert_restaurant_for_meal,
+            meal_windows
         )
         
         if best_first is None:

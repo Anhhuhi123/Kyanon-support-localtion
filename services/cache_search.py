@@ -8,7 +8,7 @@ from uuid import UUID
 import redis.asyncio as aioredis
 
 
-class CacheSearchService:
+class CacheSearch:
     """Service quản lý cache cho route và POI"""
     
     def __init__(self, redis_client: aioredis.Redis = None):

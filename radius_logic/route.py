@@ -84,49 +84,15 @@ class RouteBuilder:
         distance_matrix = self.geo.build_distance_matrix(user_location, places)
         max_distance = max(max(row) for row in distance_matrix)
         
-        # Tìm top điểm xuất phát có combined_score cao nhất
-        first_candidates = []
-        for i, place in enumerate(places):
-            # Kiểm tra opening_hours nếu có current_datetime
-            if current_datetime:
-                travel_time = self.calculator.calculate_travel_time(
-                    distance_matrix[0][i + 1],
-                    transportation_mode
-                )
-                arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
-                if not self.validator.is_poi_available_at_time(place, arrival_time):
-                    continue
-            
-            combined = self.calculator.calculate_combined_score(
-                place_idx=i,
-                current_pos=0,
-                places=places,
-                distance_matrix=distance_matrix,
-                max_distance=max_distance,
-                is_first=True
-            )
-            first_candidates.append((i, combined))
-        
-        # Nếu không có POI nào mở cửa
-        if not first_candidates:
-            print("⚠️ Không có POI nào mở cửa")
-            return []
-        
-        # Sort deterministic: score desc, index asc
-        first_candidates.sort(key=lambda x: (-x[1], x[0]))
-        
-        # Lấy điểm đầu tiên có score cao nhất
-        best_first_place = first_candidates[0][0]
-        print(f"🎯 Điểm đầu tiên: {places[best_first_place]['name']} (score={places[best_first_place]['score']:.3f})")
-        
-        # Xây dựng route đầu tiên từ điểm có score cao nhất
+        # Xây dựng route đầu tiên - KHÔNG chỉ định first_place_idx
+        # Để logic trong build_route tự động chọn dựa trên meal time
         if duration_mode:
             route_1 = self.duration_builder.build_route(
                 user_location=user_location,
                 places=places,
                 transportation_mode=transportation_mode,
                 max_time_minutes=max_time_minutes,
-                first_place_idx=best_first_place,
+                first_place_idx=None,  # Để tự động chọn dựa trên meal logic
                 current_datetime=current_datetime,
                 distance_matrix=distance_matrix,
                 max_distance=max_distance
@@ -138,7 +104,7 @@ class RouteBuilder:
                 transportation_mode=transportation_mode,
                 max_time_minutes=max_time_minutes,
                 target_places=target_places,
-                first_place_idx=best_first_place,
+                first_place_idx=None,  # Để tự động chọn dựa trên meal logic
                 current_datetime=current_datetime,
                 distance_matrix=distance_matrix,
                 max_distance=max_distance
@@ -152,9 +118,41 @@ class RouteBuilder:
         
         print(f"🎯 Route 1: {len(route_1['route'])} POI, total_score={route_1['total_score']:.2f}")
         
-        # Nếu cần nhiều hơn 1 route, thử các điểm xuất phát khác
+        # Nếu cần nhiều hơn 1 route, thử các POI xuất phát khác
+        # Tìm candidates từ POI chưa dùng trong route 1
         if max_routes > 1:
-            for first_idx, _ in first_candidates[1:]:
+            used_first_poi = route_1["route"][0]  # POI đầu của route 1
+            
+            # Tìm các POI khác để làm điểm xuất phát cho route 2, 3
+            alternative_starts = []
+            for i, place in enumerate(places):
+                if i == used_first_poi:
+                    continue  # Bỏ qua POI đã dùng làm điểm đầu route 1
+                
+                # Validate opening hours
+                if current_datetime:
+                    travel_time = self.calculator.calculate_travel_time(
+                        distance_matrix[0][i + 1],
+                        transportation_mode
+                    )
+                    arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
+                    if not self.validator.is_poi_available_at_time(place, arrival_time):
+                        continue
+                
+                combined = self.calculator.calculate_combined_score(
+                    place_idx=i,
+                    current_pos=0,
+                    places=places,
+                    distance_matrix=distance_matrix,
+                    max_distance=max_distance,
+                    is_first=True
+                )
+                alternative_starts.append((i, combined))
+            
+            # Sort và thử từng điểm xuất phát
+            alternative_starts.sort(key=lambda x: (-x[1], x[0]))
+            
+            for first_idx, _ in alternative_starts:
                 if len(all_routes) >= max_routes:
                     break
                 
@@ -164,7 +162,7 @@ class RouteBuilder:
                         places=places,
                         transportation_mode=transportation_mode,
                         max_time_minutes=max_time_minutes,
-                        first_place_idx=first_idx,
+                        first_place_idx=first_idx,  # Chỉ định POI đầu cho route 2, 3
                         current_datetime=current_datetime,
                         distance_matrix=distance_matrix,
                         max_distance=max_distance
@@ -176,7 +174,7 @@ class RouteBuilder:
                         transportation_mode=transportation_mode,
                         max_time_minutes=max_time_minutes,
                         target_places=target_places,
-                        first_place_idx=first_idx,
+                        first_place_idx=first_idx,  # Chỉ định POI đầu cho route 2, 3
                         current_datetime=current_datetime,
                         distance_matrix=distance_matrix,
                         max_distance=max_distance
