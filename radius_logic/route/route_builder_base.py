@@ -346,10 +346,15 @@ class BaseRouteBuilder:
         
         for threshold_multiplier in radius_thresholds:
             current_threshold = threshold_multiplier * max_radius
+            print(f"\n{'='*100}")
+            print(f"🔍 LAST POI SEARCH @ Threshold {threshold_multiplier*100:.0f}% = {current_threshold:.3f}km")
+            print(f"{'='*100}")
             
             for i, place in enumerate(places):
+                reasons = []
+                
                 if i in visited:
-                    continue
+                    reasons.append("visited")
                 
                 # Logic lọc Restaurant cho POI cuối
                 if should_insert_restaurant_for_meal and place.get('category') == 'Restaurant':
@@ -376,17 +381,19 @@ class BaseRouteBuilder:
                                 in_dinner = True
                         
                         if in_lunch and lunch_restaurant_inserted:
-                            continue
+                            reasons.append("lunch_already_inserted")
                         if in_dinner and dinner_restaurant_inserted:
-                            continue
+                            reasons.append("dinner_already_inserted")
                         if not in_lunch and not in_dinner:
-                            continue
+                            reasons.append("not_meal_time")
                 
                 # Kiểm tra khoảng cách đến user
                 dist_to_user = distance_matrix[i + 1][0]
                 if dist_to_user > current_threshold:
-                    continue
+                    reasons.append(f"far({dist_to_user:.3f}>{current_threshold:.3f})")
                 
+                # Kiểm tra availability
+                arrival_time = None
                 if current_datetime:
                     travel_time_to_poi = self.calculator.calculate_travel_time(
                         distance_matrix[current_pos][i + 1],
@@ -396,7 +403,7 @@ class BaseRouteBuilder:
                         minutes=total_travel_time + total_stay_time + travel_time_to_poi
                     )
                     if not self.validator.is_poi_available_at_time(place, arrival_time):
-                        continue
+                        reasons.append(f"closed@{arrival_time.strftime('%H:%M')}")
                 
                 # Kiểm tra thời gian khả thi
                 temp_travel = total_travel_time + self.calculator.calculate_travel_time(
@@ -410,28 +417,44 @@ class BaseRouteBuilder:
                 return_time = self.calculator.calculate_travel_time(
                     dist_to_user, transportation_mode
                 )
+                total_time = temp_travel + temp_stay + return_time
                 
-                if temp_travel + temp_stay + return_time > max_time_minutes:
-                    continue
+                if total_time > max_time_minutes:
+                    reasons.append(f"time({total_time:.1f}>{max_time_minutes})")
                 
-                # POI cuối: ưu tiên gần user
-                combined = self.calculator.calculate_combined_score(
-                    place_idx=i,
-                    current_pos=current_pos,
-                    places=places,
-                    distance_matrix=distance_matrix,
-                    max_distance=max_distance,
-                    is_last=True
+                # Tính combined score nếu valid
+                combined = 0.0
+                if not reasons:
+                    combined = self.calculator.calculate_combined_score(
+                        place_idx=i,
+                        current_pos=current_pos,
+                        places=places,
+                        distance_matrix=distance_matrix,
+                        max_distance=max_distance,
+                        is_last=True
+                    )
+                
+                # In tất cả POI
+                status = "❌" if reasons else "✅"
+                print(
+                    f"{status} [{i:2d}] {place.get('name')[:45]:45s} | "
+                    f"dist={dist_to_user:.3f} | rate={place.get('rating',0):.3f} | "
+                    f"sim={place.get('score',0):.3f} | comb={combined:.4f} | "
+                    f"{','.join(reasons) if reasons else 'OK'}"
                 )
+                
+                if reasons:
+                    continue
                 
                 if combined > best_last_score or (
                     combined == best_last_score and (best_last is None or i < best_last)
                 ):
                     best_last_score = combined
                     best_last = i
+                    print(f"    ⭐ NEW BEST (combined={combined:.4f})")
             
             if best_last is not None:
-                print(f"🎯 Tìm được POI cuối ở mức {threshold_multiplier*100:.0f}% bán kính")
+                print(f"\n🎯 Chọn POI cuối: [{best_last}] {places[best_last].get('name')} (threshold={threshold_multiplier*100:.0f}%)")
                 break
         
         return best_last
