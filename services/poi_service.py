@@ -51,7 +51,7 @@ class PoiService:
                 )
                 
                 if not itinerary:
-                    # User chưa có itinerary → return empty list thay vì raise exception
+                    # raise HTTPException(status_code=404, detail="Itinerary not found")
                     return []
 
                 itinerary_id = itinerary["id"]
@@ -156,7 +156,6 @@ class PoiService:
                         #  add vô thôi chớ chưa có clean gì hết
                         processed_data = process_ingest_to_poi_clean(
                             poi_row=poi_data,
-                            default_stay_time=30.0
                         ) 
                         # Validate required fields
                         if not processed_data.get("lat") or not processed_data.get("lon"):
@@ -182,15 +181,10 @@ class PoiService:
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
-    
-    
+
     async def _upsert_poi_clean(self, conn: asyncpg.Connection, data: Dict[str, Any]):
         """
         Insert or Update POI data vào bảng PoiClean
-
-        Args:
-            conn: Database connection
-            data: Processed POI data
         """
 
         # Convert opening_hours to JSON string
@@ -207,7 +201,6 @@ class PoiService:
             poi_type,
             avg_stars,
             total_reviews,
-            stay_time,
             open_hours,
             created_at,
             "updatedAt",
@@ -216,7 +209,7 @@ class PoiService:
         VALUES (
             $1, $2, $3, $4, $5,
             ST_SetSRID(ST_MakePoint($6, $7), 4326),
-            $8, $9, $10, $11, $12,
+            $8, $9, $10, $11,
             NOW(),
             NOW(),
             NULL
@@ -230,7 +223,6 @@ class PoiService:
             poi_type = EXCLUDED.poi_type,
             avg_stars = EXCLUDED.avg_stars,
             total_reviews = EXCLUDED.total_reviews,
-            stay_time = EXCLUDED.stay_time,
             open_hours = EXCLUDED.open_hours,
             "updatedAt" = NOW();
         """
@@ -247,9 +239,10 @@ class PoiService:
             data.get("poi_type"),      # $8: poi_type
             data.get("avg_stars"),     # $9: avg_stars
             data.get("total_reviews"), # $10: total_reviews
-            data.get("stay_time"),     # $11: stay_time
-            opening_hours_json         # $12: open_hours
+            opening_hours_json         # $11: open_hours
         )
+
+
 
 
     async def generate_description(self, poi_ids: List[UUID]):
@@ -270,6 +263,14 @@ class PoiService:
         """
         if not self.db_pool:
             raise HTTPException(status_code=500, detail="Database pool not initialized")
+
+        if not poi_ids:
+            return {
+                "success_count": 0,
+                "failed_count": 0,
+                "failed_ids": [],
+                "message": "No POI IDs provided"
+            }
 
         failed_ids = []
         failed_count = 0
@@ -306,7 +307,7 @@ class PoiService:
         # ===============================
         # LOAD BASE PROMPT
         # ===============================
-        prompt_path = os.path.join(os.getcwd(), "scripts/generate_description/input_missing_metadata.txt")
+        prompt_path = os.path.join(os.getcwd(), "scripts/generate_description/final_prompt_stay_time_default.txt")
         with open(prompt_path, "r", encoding="utf-8") as f:
             base_prompt = f.read()
 
@@ -350,16 +351,12 @@ class PoiService:
             "data": results
         }
 
+
     async def _update_poi_clean_from_llm(self, llm_results: List[dict]) -> dict:
         """
         Update PoiClean table từ kết quả LLM.
-        
-        Args:
-            llm_results: List dict chứa id, poi_type_new, main_subcategory, specialization, suitability
-            
-        Returns:
-            Dict với updated_count, skipped_count, error_count, error_ids
         """
+
         if not self.db_pool:
             raise HTTPException(status_code=500, detail="Database pool not initialized")
         
@@ -384,23 +381,26 @@ class PoiService:
                 main_subcategory = poi.get('main_subcategory')
                 specialization = poi.get('specialization')
                 suitability = poi.get('suitability')
-                
+                stay_time = poi.get('stay_time')   
+
                 # Convert suitability dict to JSON string
                 suitability_json = json.dumps(suitability) if suitability else None
                 
                 try:
                     await conn.execute(
                         '''UPDATE "PoiClean"
-                           SET poi_type_clean = $1,
-                               main_subcategory = $2,
-                               specialization = $3,
-                               travel_type = $4,
-                               "updatedAt" = NOW()
-                           WHERE id = $5''',
+                        SET poi_type_clean = $1,
+                            main_subcategory = $2,
+                            specialization = $3,
+                            travel_type = $4,
+                            stay_time = $5,              
+                            "updatedAt" = NOW()
+                        WHERE id = $6''',
                         poi_type_clean,
                         main_subcategory,
                         specialization,
                         suitability_json,
+                        stay_time,                       
                         poi_id
                     )
 
@@ -409,7 +409,7 @@ class PoiService:
                     # Print progress every 100 records
                     if (updated_count + skipped_count) % 100 == 0:
                         print(f"Processed: {updated_count + skipped_count} records "
-                              f"(Updated: {updated_count}, Skipped: {skipped_count})")
+                            f"(Updated: {updated_count}, Skipped: {skipped_count})")
                 
                 except Exception as e:
                     error_count += 1
@@ -427,6 +427,8 @@ class PoiService:
             "error_count": error_count,
             "error_ids": error_ids
         }
+
+ 
     
     async def delete_poi(self, poi_ids: List[UUID]) -> Dict[str, Any]:
         """
@@ -554,6 +556,14 @@ class PoiService:
         
         if not self.db_pool:
             raise HTTPException(status_code=500, detail="Database pool not initialized")
+
+        if not poi_ids:
+            return {
+                "success_count": 0,
+                "failed_count": 0,
+                "failed_ids": [],
+                "message": "No poi_ids provided, skip cleaning"
+            }
         
         success_count = 0
         failed_count = 0
@@ -566,26 +576,18 @@ class PoiService:
                     'SELECT MIN(avg_stars) AS min_avg_stars FROM "PoiClean" WHERE avg_stars IS NOT NULL AND "deletedAt" IS NULL'
                 )
                 min_avg_stars = min_row["min_avg_stars"] if min_row and min_row["min_avg_stars"] else 1.0
-                
                 # Lấy data từ bảng PoiClean
-                if poi_ids:
-                    # Chỉ clean các POI theo danh sách IDs
-                    rows = await conn.fetch(
-                        'SELECT id, avg_stars, total_reviews, open_hours FROM "PoiClean" WHERE "id" = ANY($1::uuid[]) AND "deletedAt" IS NULL',
-                        poi_ids
-                    )
-                else:
-                    # Clean toàn bộ POI
-                    rows = await conn.fetch(
-                        'SELECT id, avg_stars, total_reviews, open_hours FROM "PoiClean" WHERE "deletedAt" IS NULL'
-                    )
-                
+                rows = await conn.fetch(
+                    'SELECT id, avg_stars, total_reviews, open_hours FROM "PoiClean" WHERE "id" = ANY($1::uuid[]) AND "deletedAt" IS NULL',
+                    poi_ids
+                )
+
                 if not rows:
                     return {
                         "success_count": 0,
-                        "failed_count": len(poi_ids) if poi_ids else 0,
-                        "failed_ids": [str(pid) for pid in poi_ids] if poi_ids else [],
-                        "message": "No POI found in PoiClean"
+                        "failed_count": len(poi_ids),
+                        "failed_ids": [str(pid) for pid in poi_ids],
+                        "message": "No POI found in PoiClean with provided IDs"
                     }
                 
                 # Clean từng POI
@@ -643,3 +645,4 @@ class PoiService:
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
