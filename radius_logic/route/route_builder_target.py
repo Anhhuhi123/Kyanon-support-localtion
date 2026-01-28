@@ -369,8 +369,25 @@ class TargetRouteBuilder(BaseRouteBuilder):
             exclude_restaurant = True
         
         # Cafe-sequence logic: chèn cafe sau mỗi 2 POI không phải cafe
-        if should_insert_cafe and required_category is None and not should_insert_restaurant_for_meal:
-            if cafe_counter >= 2:
+        # NHƯNG: Không chèn cafe nếu đang trong meal window (meal priority cao nhất)
+        if should_insert_cafe and required_category is None:
+            # Check xem có đang trong meal window không
+            in_meal_window = False
+            if meal_windows and arrival_at_next:
+                if meal_windows.get('lunch') and need_lunch_restaurant and not lunch_restaurant_inserted:
+                    lunch_start, lunch_end = meal_windows['lunch']
+                    if lunch_start <= arrival_at_next <= lunch_end:
+                        in_meal_window = True
+                        print(f"🍽️  Block cafe-sequence: Đang trong LUNCH window ({arrival_at_next.strftime('%H:%M')})")
+                
+                if meal_windows.get('dinner') and need_dinner_restaurant and not dinner_restaurant_inserted:
+                    dinner_start, dinner_end = meal_windows['dinner']
+                    if dinner_start <= arrival_at_next <= dinner_end:
+                        in_meal_window = True
+                        print(f"🍽️  Block cafe-sequence: Đang trong DINNER window ({arrival_at_next.strftime('%H:%M')})")
+            
+            # Chỉ chèn cafe khi KHÔNG trong meal window
+            if not in_meal_window and cafe_counter >= 2:
                 # Tìm category cafe khả dụng
                 cafe_categories = []
                 for i, p in enumerate(places):
@@ -383,6 +400,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 if cafe_categories:
                     required_category = cafe_categories[0]
                     exclude_restaurant = False
+                    print(f"☕ Cafe-sequence triggered: cafe_counter={cafe_counter} >= 2 → Chèn Cafe")
         
         # Loại cafe khỏi alternation khi cafe-sequence bật
         alternation_categories = [
