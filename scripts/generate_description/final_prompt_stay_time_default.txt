@@ -23,7 +23,7 @@ Allowed values:
 Suitability (REQUIRED):
 Always include the suitability field with Solo, Couple, Friends, Family with kids, and Business traveler / free time percentages (0–100, not required to sum to 100).
 
-If you have metadata from "Popular for", "Atmosphere", "Offerings", "Highlights", or "PoiName" to estimate suitability, use that.
+If you have metadata from "Popular for", "Atmosphere", "Offerings", "Highlights", or "PoiName" and "PoiType" to estimate suitability, use that.
 If metadata is limited or missing, estimate suitability based on "PoiType" and contextual signals from "PoiName", using reasonable defaults.
 
 Rules:
@@ -36,6 +36,7 @@ Rules:
 - Always include "suitability".
 - Never return errors or messages; always return JSON per the formats below.
 - Use metadata fields when available: "Popular for", "Atmosphere", "Offerings", "Highlights", "PoiType", "Crowd", "Dining Options", "Children".
+
 ────────────────────────────────────────
 stay_time (REQUIRED)
 ────────────────────────────────────────
@@ -45,56 +46,66 @@ stay_time represents the estimated amount of time (in minutes) a typical visitor
 Rules for stay_time:
 - Always include stay_time in the output.
 - stay_time must be a single integer (minutes), NOT a range.
+- stay_time MUST be determined directly from the "PoiType" category.
 
-Conceptual base ranges (for reasoning ONLY — do NOT return ranges):
-- Bar: typically 60–120 minutes
-- Restaurant: typically 45–90 minutes
-- Cafe: typically 30–180 minutes
-  - Longer durations (up to ~180 minutes) apply to study-friendly or work-friendly cafes
-- Tourist attractions / landmarks / sightseeing places: typically 60–120 minutes
-- Supermarket / grocery store:
-  - Small or regular size: typically 30–60 minutes
-  - Large supermarket / hypermarket: typically up to ~90 minutes
+Fixed mapping rules (authoritative):
+
+- Historical Monument → 40  
+- Museum / Gallery → 65  
+- Bar / Pub -> 100
+- Viewpoint / Scenic Park → 35  
+- Church / Temple → 22  
+- Restaurant / Market / Supermarket → 70  
+- Café / Snack Stop → 25  
+- Plaza / Street Walk → 35  
+- Beach / Recreational Park → 80  
+- Event / Cultural Activity → 105  
+- Local Shop / Souvenir → 20  
+- Adventure / Outdoor Activity → 85  
+- Hotel -> 1440
 
 Dependency rules:
-- stay_time MUST depend primarily on:
-  - "PoiType", 
-  - "Dining Options",
-  - "Offerings",
-  - "Popular for",
-  - "Atmosphere",
-  - "Highlights", 
-  - "Crowd", 
-  - "Dining Options", 
-  - "Children"
-
+- stay_time MUST depend ONLY on:
+  - "poi_type_new" (AFTER classification is completed)
 - stay_time MUST NOT depend on:
   - suitability scores
   - visitor group (Solo, Couple, Friends, Family with kids, Business traveler / free time)
-
-Fast / short-visit override:
-- If metadata indicates fast consumption
-  (e.g., Fast Food, Quick Bites, Grab-and-go, takeaway-focused),
-  set stay_time to a shorter duration (typically around 30 minutes),
+  - main_subcategory
+  - specialization
+  - any other metadata fields ("Offerings", "Atmosphere", "Highlights", etc.)
 
 Selection rules:
-- The returned stay_time MUST be a single fixed number chosen within a reasonable range.
-- The value should represent a typical or average stay, not an extreme.
-- If multiple durations are plausible:
-  - Prefer the middle or slightly conservative value.
-- If metadata is limited or missing:
-  - Choose a reasonable default based on "PoiType"alone.
-
-Examples of reasonable fixed outputs (illustrative only):
-- Fast Food restaurant → 30
-- Casual Restaurant → 60
-- Fine Dining → 90
-- Cafe (normal) → 60
-- Work-friendly Cafe → 90–120
-- Bar → 90
+- Always choose the stay_time value exactly as defined in the mapping above.
+- Use the first/main PoiType.
 
 ────────────────────────────────────────
+BAKERY OVERRIDE RULE
+────────────────────────────────────────
 
+If "PoiType" contains or includes any of the following keywords
+(case-insensitive, partial match allowed):
+
+- "bakery"
+- "cake"
+- "cakeshop"
+- "cake shop"
+- "pastry"
+- "patisserie"
+
+Then override classification as follows:
+
+- Set:
+  "poi_type_new" = "Cafe"
+  "main_subcategory" = "Bakery"
+
+Rules:
+- This override has PRIORITY over all other classification rules.
+- Ignore other conflicting categories when bakery is present in PoiType.
+- specialization:
+  - Only include specialization if metadata is sufficient
+  - Otherwise omit specialization
+
+────────────────────────────────────────
 
 Output (choose the most complete you can support from metadata):
 
@@ -109,7 +120,7 @@ Minimal:
     "Family with kids": <0-100>,
     "Business traveler / free time": <0-100>
   },
-  "stay_time": <minutes>
+  "stay_time": <minutes>,
 }
 
 If POI is not food & nightlife (use actual category from PoiType):
@@ -123,7 +134,7 @@ If POI is not food & nightlife (use actual category from PoiType):
     "Family with kids": <0-100>,
     "Business traveler / free time": <0-100>
   },
-  "stay_time": <minutes>
+  "stay_time": <minutes>,
 }
 
 If subcategory inferred but specialization not certain:
@@ -138,7 +149,7 @@ If subcategory inferred but specialization not certain:
     "Family with kids": <0-100>,
     "Business traveler / free time": <0-100>
   },
-  "stay_time": <minutes>
+  "stay_time": <minutes>,
 }
 
 Full (if enough data):
@@ -154,9 +165,10 @@ Full (if enough data):
     "Family with kids": <0-100>,
     "Business traveler / free time": <0-100>
   },
-  "stay_time": <minutes>
+  "stay_time": <minutes>,
 }
 
 Return JSON following the format above.
 
 Now classify the following POI:
+

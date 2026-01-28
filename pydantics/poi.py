@@ -6,11 +6,7 @@ from typing import Optional
 
 class PoiRequest(BaseModel):
     add: List[UUID] = Field(default_factory=list)
-    update: List[UUID] = Field(default_factory=list)
     delete: List[UUID] = Field(default_factory=list)
-
-
-
 class ConfirmReplaceRequest(BaseModel):
     user_id: UUID = Field(
         ...,

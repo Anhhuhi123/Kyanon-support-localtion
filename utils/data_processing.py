@@ -261,17 +261,15 @@ def extract_poi_data(poi_row: Dict, default_stay_time: float = 30.0) -> Dict[str
     result["children"] = ", ".join(extract_true_keys(additional.get("Children")))
     result["accessibility"] = ", ".join(extract_true_keys(additional.get("Accessibility")))
     result["popular_for"] = ", ".join(extract_true_keys(additional.get("Popular for")))
-    result["stay_time"] = default_stay_time
     
     return result
 
 
 def process_ingest_to_poi_clean(
     poi_row: Dict,
-    default_stay_time: float = 30.0,
 ) -> Dict[str, Any]:
  
     # Step 1: Extract
-    extracted = extract_poi_data(poi_row,default_stay_time)
+    extracted = extract_poi_data(poi_row)
     
     return extracted
