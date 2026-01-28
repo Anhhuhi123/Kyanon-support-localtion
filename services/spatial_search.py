@@ -177,11 +177,18 @@ class SpatialSearch(QdrantSearch):
 
             # Luôn mở rộng "Food & Local Flavours" thành ["Cafe & Bakery", "Restaurant"]
             queries = []
+            has_food_and_local = False
             for q in original_queries:
                 if q == "Food & Local Flavours":
                     queries.extend(["Cafe & Bakery", "Restaurant"])
+                    has_food_and_local = True
                 else:
                     queries.append(q)
+            
+            # Nếu user KHÔNG chọn "Food & Local Flavours" thì tự động thêm "Cafe" để có candidate cho cafe-sequence
+            # (Chỉ query "Cafe" thay vì "Cafe & Bakery" để phân biệt với Food & Local Flavours)
+            if not has_food_and_local and "Cafe" not in queries:
+                queries.append("Cafe")
             
             # Nếu customer_like=True và input ban đầu CHỈ có 1 query là "Food & Local Flavours", tự động thêm "Culture & heritage"
             if customer_like:

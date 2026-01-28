@@ -137,6 +137,7 @@ class DurationRouteBuilder(BaseRouteBuilder):
         meal_windows = meal_info["meal_windows"]
         need_lunch_restaurant = meal_info["need_lunch_restaurant"]
         need_dinner_restaurant = meal_info["need_dinner_restaurant"]
+        should_insert_cafe = meal_info.get("should_insert_cafe", False)
         
         # Print thông báo meal time overlap
         if should_insert_restaurant_for_meal:
@@ -153,7 +154,7 @@ class DurationRouteBuilder(BaseRouteBuilder):
         best_first = self.select_first_poi(
             places, first_place_idx, distance_matrix, max_distance,
             transportation_mode, current_datetime, should_insert_restaurant_for_meal,
-            meal_windows
+            meal_windows, should_insert_cafe
         )
         
         if best_first is None:
@@ -184,10 +185,10 @@ class DurationRouteBuilder(BaseRouteBuilder):
         if 'category' in places[best_first]:
             category_sequence.append(places[best_first].get('category'))
         
-        # Kiểm tra POI đầu có phải Restaurant trong meal không
-        lunch_restaurant_inserted, dinner_restaurant_inserted = self.check_first_poi_meal_status(
+        # Kiểm tra POI đầu có phải Restaurant trong meal không và khởi tạo cafe_counter
+        lunch_restaurant_inserted, dinner_restaurant_inserted, cafe_counter = self.check_first_poi_meal_status(
             best_first, places, should_insert_restaurant_for_meal, meal_windows,
-            distance_matrix, transportation_mode, current_datetime
+            distance_matrix, transportation_mode, current_datetime, should_insert_cafe
         )
         
         # Print thông báo POI đầu
@@ -228,7 +229,8 @@ class DurationRouteBuilder(BaseRouteBuilder):
                 current_datetime, prev_bearing, user_location,
                 all_categories, category_sequence, should_insert_restaurant_for_meal,
                 meal_windows, need_lunch_restaurant, need_dinner_restaurant,
-                lunch_restaurant_inserted, dinner_restaurant_inserted
+                lunch_restaurant_inserted, dinner_restaurant_inserted,
+                should_insert_cafe, cafe_counter
             )
             
             if best_next is None:
@@ -253,6 +255,21 @@ class DurationRouteBuilder(BaseRouteBuilder):
             
             if 'category' in places[poi_idx]:
                 category_sequence.append(places[poi_idx].get('category'))
+            
+            # Update cafe_counter sau khi thêm POI
+            if should_insert_cafe:
+                poi_cat = places[poi_idx].get('category', '')
+                is_cafe = bool(poi_cat and 'cafe' in poi_cat.lower())
+                is_restaurant = poi_cat == 'Restaurant'
+                
+                if is_cafe or is_restaurant:
+                    cafe_counter = 0  # Reset counter nếu POI mới là Cafe hoặc Restaurant
+                else:
+                    cafe_counter += 1  # Tăng counter lên 1
+            
+            # Nhận updated cafe_counter từ best_next nếu có
+            if 'updated_cafe_counter' in best_next:
+                cafe_counter = best_next['updated_cafe_counter']
             
             travel_time = self.calculator.calculate_travel_time(
                 distance_matrix[current_pos][poi_idx + 1],
@@ -325,9 +342,13 @@ class DurationRouteBuilder(BaseRouteBuilder):
         transportation_mode, max_time_minutes, total_travel_time, total_stay_time,
         current_datetime, prev_bearing, user_location, all_categories, category_sequence,
         should_insert_restaurant_for_meal, meal_windows, need_lunch_restaurant,
-        need_dinner_restaurant, lunch_restaurant_inserted, dinner_restaurant_inserted
+        need_dinner_restaurant, lunch_restaurant_inserted, dinner_restaurant_inserted,
+        should_insert_cafe: bool = False, cafe_counter: int = 0
     ) -> Optional[Dict[str, Any]]:
-        """Chọn POI giữa - tương tự target mode"""
+        """Chọn POI giữa - hỗ trợ meal-priority và cafe-sequence insertion."""
+        
+        def is_cafe_cat(cat: Optional[str]) -> bool:
+            return bool(cat and "cafe" in cat.lower())
         
         # Kiểm tra meal time priority
         arrival_at_next = None
@@ -367,14 +388,37 @@ class DurationRouteBuilder(BaseRouteBuilder):
         elif should_insert_restaurant_for_meal and lunch_restaurant_inserted and dinner_restaurant_inserted:
             exclude_restaurant = True
         
-        if required_category is None and category_sequence and all_categories:
+        # Cafe-sequence logic: chèn cafe sau mỗi 2 POI không phải cafe
+        if should_insert_cafe and required_category is None and not should_insert_restaurant_for_meal:
+            if cafe_counter >= 2:
+                # Tìm category cafe khả dụng
+                cafe_categories = []
+                for i, p in enumerate(places):
+                    if i in visited:
+                        continue
+                    cat = p.get('category')
+                    if is_cafe_cat(cat):
+                        cafe_categories.append(cat)
+                
+                if cafe_categories:
+                    required_category = cafe_categories[0]
+                    exclude_restaurant = False
+        
+        # Loại cafe khỏi alternation khi cafe-sequence bật
+        alternation_categories = [
+            c for c in all_categories
+            if not (should_insert_cafe and is_cafe_cat(c))
+        ] if all_categories else []
+        
+        # Nếu chưa có required_category, dùng alternation (skip cafe nếu đang quản lý sequence)
+        if required_category is None and category_sequence and alternation_categories:
             last_category = category_sequence[-1]
             try:
-                current_idx = all_categories.index(last_category)
-                next_idx = (current_idx + 1) % len(all_categories)
-                required_category = all_categories[next_idx]
+                current_idx = alternation_categories.index(last_category)
+                next_idx = (current_idx + 1) % len(alternation_categories)
+                required_category = alternation_categories[next_idx]
             except ValueError:
-                required_category = all_categories[0] if all_categories else None
+                required_category = alternation_categories[0] if alternation_categories else None
         
         # Tìm candidates với category yêu cầu
         candidates = []

@@ -86,11 +86,16 @@ class BaseRouteBuilder:
         ))
         has_cafe = "Cafe & Bakery" in all_categories
         has_restaurant = "Restaurant" in all_categories
+        # Kiểm tra có "Cafe" (không phải "Cafe & Bakery") để kích hoạt cafe-sequence
+        has_cafe_only = any("cafe" in cat.lower() and "bakery" not in cat.lower() for cat in all_categories if cat)
         
         should_insert_restaurant_for_meal = False
         meal_windows = None
         need_lunch_restaurant = False
         need_dinner_restaurant = False
+        
+        # Cafe-sequence flag: bật khi có "Cafe" và KHÔNG có "Cafe & Bakery"
+        should_insert_cafe = has_cafe_only and not has_cafe
         
         if not has_cafe and has_restaurant:
             if current_datetime and max_time_minutes:
@@ -115,7 +120,8 @@ class BaseRouteBuilder:
             "should_insert_restaurant_for_meal": should_insert_restaurant_for_meal,
             "meal_windows": meal_windows,
             "need_lunch_restaurant": need_lunch_restaurant,
-            "need_dinner_restaurant": need_dinner_restaurant
+            "need_dinner_restaurant": need_dinner_restaurant,
+            "should_insert_cafe": should_insert_cafe
         }
     
     def select_first_poi(
@@ -127,7 +133,8 @@ class BaseRouteBuilder:
         transportation_mode: str,
         current_datetime: Optional[datetime],
         should_insert_restaurant_for_meal: bool,
-        meal_windows: Optional[Dict] = None
+        meal_windows: Optional[Dict] = None,
+        should_insert_cafe: bool = False
     ) -> Optional[int]:
         """
         Chọn POI đầu tiên cho route dựa trên combined score (score + distance)
@@ -182,6 +189,9 @@ class BaseRouteBuilder:
         best_first = None
         best_first_score = -1
         
+        def is_cafe_cat(cat: Optional[str]) -> bool:
+            return bool(cat and "cafe" in cat.lower())
+        
         for i, place in enumerate(places):
             if current_datetime:
                 travel_time = self.calculator.calculate_travel_time(
@@ -191,6 +201,10 @@ class BaseRouteBuilder:
                 arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
                 if not self.validator.is_poi_available_at_time(place, arrival_time):
                     continue
+            
+            # ĐÓNG cafe khi cafe-sequence bật: cafe chỉ chèn sau 2 POI, không được là POI đầu
+            if should_insert_cafe and is_cafe_cat(place.get('category')):
+                continue
             
             # Logic meal time cho POI đầu
             if should_insert_restaurant_for_meal:
@@ -230,13 +244,20 @@ class BaseRouteBuilder:
         meal_windows: Optional[Dict],
         distance_matrix: List[List[float]],
         transportation_mode: str,
-        current_datetime: Optional[datetime]
-    ) -> Tuple[bool, bool]:
+        current_datetime: Optional[datetime],
+        should_insert_cafe: bool = False
+    ) -> Tuple[bool, bool, int]:
         """
         Kiểm tra xem POI đầu tiên có phải là Restaurant đã thỏa mãn meal requirement không
+        Đồng thời khởi tạo cafe_counter cho cafe-sequence logic
         
         Nếu POI đầu tiên là Restaurant VÀ arrival time rơi vào meal window
         → Đánh dấu đã insert Restaurant cho meal đó (không cần insert thêm)
+        
+        Cafe counter logic:
+        - Nếu POI đầu là Restaurant → cafe_counter = 0
+        - Nếu POI đầu là Cafe → cafe_counter = 0
+        - Nếu POI đầu không phải Restaurant/Cafe → cafe_counter = 1
         
         Args:
             first_poi_idx: Index của POI đầu tiên
@@ -246,29 +267,52 @@ class BaseRouteBuilder:
             distance_matrix: Ma trận khoảng cách
             transportation_mode: Phương tiện di chuyển
             current_datetime: Thời điểm bắt đầu
+            should_insert_cafe: True nếu bật cafe-sequence
             
         Returns:
-            Tuple (lunch_restaurant_inserted, dinner_restaurant_inserted)
+            Tuple (lunch_restaurant_inserted, dinner_restaurant_inserted, cafe_counter)
             - lunch_restaurant_inserted: True nếu POI đầu là Restaurant trong lunch window
             - dinner_restaurant_inserted: True nếu POI đầu là Restaurant trong dinner window
-            
-        Note:
-            Chỉ đánh dấu khi:
-            1. should_insert_restaurant_for_meal = True
-            2. POI đầu có category = "Restaurant"
-            3. arrival_time rơi vào lunch window (11:00-14:00) hoặc dinner window (17:00-20:00)
+            - cafe_counter: Số POI kể từ cafe gần nhất (0 hoặc 1 cho POI đầu)
         """
         lunch_inserted = False
         dinner_inserted = False
+        cafe_counter = 0
         
         if not should_insert_restaurant_for_meal:
-            return lunch_inserted, dinner_inserted
+            # Khởi tạo cafe_counter ngay cả khi không có meal requirement
+            if should_insert_cafe:
+                first_cat = places[first_poi_idx].get('category', '')
+                is_cafe = bool(first_cat and 'cafe' in first_cat.lower())
+                is_restaurant = first_cat == 'Restaurant'
+                if is_restaurant or is_cafe:
+                    cafe_counter = 0
+                else:
+                    cafe_counter = 1
+            return lunch_inserted, dinner_inserted, cafe_counter
         
         if places[first_poi_idx].get('category') != 'Restaurant':
-            return lunch_inserted, dinner_inserted
+            # Khởi tạo cafe_counter ngay cả khi POI đầu không phải Restaurant
+            if should_insert_cafe:
+                first_cat = places[first_poi_idx].get('category', '')
+                is_cafe = bool(first_cat and 'cafe' in first_cat.lower())
+                if is_cafe:
+                    cafe_counter = 0
+                else:
+                    cafe_counter = 1
+            return lunch_inserted, dinner_inserted, cafe_counter
         
         if not (current_datetime and meal_windows):
-            return lunch_inserted, dinner_inserted
+            # Khởi tạo cafe_counter
+            if should_insert_cafe:
+                first_cat = places[first_poi_idx].get('category', '')
+                is_cafe = bool(first_cat and 'cafe' in first_cat.lower())
+                is_restaurant = first_cat == 'Restaurant'
+                if is_restaurant or is_cafe:
+                    cafe_counter = 0
+                else:
+                    cafe_counter = 1
+            return lunch_inserted, dinner_inserted, cafe_counter
         
         travel_time = self.calculator.calculate_travel_time(
             distance_matrix[0][first_poi_idx + 1],
@@ -286,7 +330,19 @@ class BaseRouteBuilder:
             if dinner_start <= arrival_first <= dinner_end:
                 dinner_inserted = True
         
-        return lunch_inserted, dinner_inserted
+        # Khởi tạo cafe_counter dựa trên POI đầu
+        cafe_counter = 0
+        if should_insert_cafe:
+            first_cat = places[first_poi_idx].get('category', '')
+            is_cafe = bool(first_cat and 'cafe' in first_cat.lower())
+            is_restaurant = first_cat == 'Restaurant'
+            
+            if is_restaurant or is_cafe:
+                cafe_counter = 0  # Reset counter nếu POI đầu là Restaurant hoặc Cafe
+            else:
+                cafe_counter = 1  # Đếm lên 1 nếu POI đầu không phải Restaurant/Cafe
+        
+        return lunch_inserted, dinner_inserted, cafe_counter
     
     def select_last_poi(
         self,
