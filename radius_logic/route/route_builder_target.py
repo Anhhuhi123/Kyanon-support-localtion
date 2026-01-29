@@ -145,7 +145,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
             print("="*60 + "\n")
         
         # 3. Chọn điểm đầu tiên
-        best_first = self.select_first_poi(
+        best_first, should_insert_cafe = self.select_first_poi(
             places, first_place_idx, distance_matrix, max_distance,
             transportation_mode, current_datetime, should_insert_restaurant_for_meal,
             meal_windows, should_insert_cafe
@@ -153,7 +153,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
         
         if best_first is None:
             return None
-        
+      
         # Khởi tạo route
         route = [best_first]
         visited = {best_first}
@@ -180,7 +180,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
             category_sequence.append(places[best_first].get('category'))
         
         # Kiểm tra POI đầu có phải Restaurant trong meal không và khởi tạo cafe_counter
-        lunch_restaurant_inserted, dinner_restaurant_inserted, cafe_counter = self.check_first_poi_meal_status(
+        lunch_restaurant_inserted, dinner_restaurant_inserted, cafe_counter, should_insert_cafe = self.check_first_poi_meal_status(
             best_first, places, should_insert_restaurant_for_meal, meal_windows,
             distance_matrix, transportation_mode, current_datetime, should_insert_cafe
         )
@@ -328,7 +328,8 @@ class TargetRouteBuilder(BaseRouteBuilder):
         """Chọn POI giữa với logic xen kẽ category, meal priority và cafe-sequence"""
         
         def is_cafe_cat(cat: Optional[str]) -> bool:
-            return bool(cat and "cafe" in cat.lower())
+            # CHỈ "Cafe" trigger cafe-sequence, "Cafe & Bakery" xen kẽ bình thường
+            return cat == "Cafe"
         
         # Kiểm tra meal time priority
         arrival_at_next = None
@@ -478,8 +479,21 @@ class TargetRouteBuilder(BaseRouteBuilder):
         # Chọn POI tốt nhất
         if candidates:
             candidates.sort(key=lambda x: (-x[1], x[0]))
+            best_idx = candidates[0][0]
+            
+            # 🔄 Reset cafe_counter khi chọn Restaurant hoặc Cafe (cả 2 đều là nơi dừng chân)
+            # "Cafe & Bakery" KHÔNG reset - thuộc Food & Local Flavours, xen kẽ bình thường
+            selected_cat = places[best_idx].get('category')
+            if selected_cat in ("Restaurant", "Cafe"):
+                # Restaurant/Cafe → reset cafe_counter về 0
+                return {
+                    'index': best_idx,
+                    'target_meal_type': target_meal_type,
+                    'reset_cafe_counter': True
+                }
+            
             return {
-                'index': candidates[0][0],
+                'index': best_idx,
                 'target_meal_type': target_meal_type
             }
         
