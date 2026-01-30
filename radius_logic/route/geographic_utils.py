@@ -79,6 +79,41 @@ class GeographicUtils:
             diff = 360 - diff
         return diff
 
+    @staticmethod
+    def is_poi_in_bearing_range(
+        current_lat: float, 
+        current_lon: float,
+        poi_lat: float,
+        poi_lon: float,
+        target_bearing: float,
+        bearing_range: float
+    ) -> bool:
+        """
+        Kiểm tra POI có nằm trong phạm vi góc cho phép hay không
+        
+        Args:
+            current_lat, current_lon: Vị trí hiện tại
+            poi_lat, poi_lon: Vị trí POI cần kiểm tra
+            target_bearing: Hướng mục tiêu (độ, 0-360)
+            bearing_range: Phạm vi góc cho phép (±degrees)
+                          Ví dụ: 90 = ±90° (chấp nhận POI trong nửa vòng tròn phía trước)
+        
+        Returns:
+            True nếu POI nằm trong phạm vi, False nếu không
+        """
+        # Tính bearing từ vị trí hiện tại đến POI
+        poi_bearing = GeographicUtils.calculate_bearing(
+            current_lat, current_lon, poi_lat, poi_lon
+        )
+        
+        # Tính góc chênh lệch
+        bearing_diff = GeographicUtils.calculate_bearing_difference(
+            target_bearing, poi_bearing
+        )
+        
+        # Kiểm tra xem góc chênh lệch có nằm trong phạm vi cho phép không
+        return bearing_diff <= bearing_range
+
     def build_distance_matrix(
         self,
         user_location: Tuple[float, float],
@@ -111,3 +146,5 @@ class GeographicUtils:
                 matrix[j][i] = dist  # Ma trận đối xứng
         
         return matrix
+    
+    

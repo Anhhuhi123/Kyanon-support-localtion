@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
 from utils.time_utils import TimeUtils
 from .route_builder_base import BaseRouteBuilder
+from .route_config import RouteConfig
 
 class TargetRouteBuilder(BaseRouteBuilder):
     """
@@ -419,62 +420,100 @@ class TargetRouteBuilder(BaseRouteBuilder):
             except ValueError:
                 required_category = alternation_categories[0] if alternation_categories else None
         
-        # Tìm candidates với category yêu cầu
+        # Tính target_bearing (hướng từ vị trí hiện tại về user - để tạo vòng cung)
+        target_bearing = None
+        current_lat, current_lon = None, None
+        if user_location:
+            if current_pos == 0:  # Từ user
+                current_lat, current_lon = user_location
+            else:
+                current_place = places[current_pos - 1]
+                current_lat, current_lon = current_place["lat"], current_place["lon"]
+            
+            # Hướng về user (để POI tiếp theo tiến dần về phía user)
+            target_bearing = self.geo.calculate_bearing(
+                current_lat, current_lon, user_location[0], user_location[1]
+            )
+        
+        # Tìm candidates với bearing filter (mở rộng dần nếu không tìm được)
         candidates = []
         last_added_place = places[route[-1]] if route else None
+        bearing_range = RouteConfig.INITIAL_BEARING_RANGE  # Bắt đầu với ±90°
         
-        for i, place in enumerate(places):
-            if i in visited:
-                continue
+        while not candidates and bearing_range <= RouteConfig.MAX_BEARING_RANGE:
+            # Debug: In thông tin bearing range hiện tại
+            if target_bearing is not None:
+                print(f"🧭 Bearing filter: target={target_bearing:.1f}°, range=±{bearing_range:.1f}°")
             
-            if exclude_restaurant and place.get('category') == 'Restaurant':
-                continue
-            
-            if required_category and place.get('category') != required_category:
-                continue
-            
-            if last_added_place and self.validator.is_same_food_type(last_added_place, place):
-                continue
-            
-            if current_datetime:
-                travel_time_to_poi = self.calculator.calculate_travel_time(
+            for i, place in enumerate(places):
+                if i in visited:
+                    continue
+                
+                if exclude_restaurant and place.get('category') == 'Restaurant':
+                    continue
+                
+                if required_category and place.get('category') != required_category:
+                    continue
+                
+                if last_added_place and self.validator.is_same_food_type(last_added_place, place):
+                    continue
+                
+                # ⭐ BEARING FILTER: Chỉ POI trong phạm vi góc cho phép
+                if target_bearing is not None and current_lat is not None:
+                    poi_in_range = self.geo.is_poi_in_bearing_range(
+                        current_lat, current_lon,
+                        place["lat"], place["lon"],
+                        target_bearing, bearing_range
+                    )
+                    if not poi_in_range:
+                        continue  # Loại bỏ POI ngoài phạm vi
+                
+                if current_datetime:
+                    travel_time_to_poi = self.calculator.calculate_travel_time(
+                        distance_matrix[current_pos][i + 1],
+                        transportation_mode
+                    )
+                    arrival_time = current_datetime + timedelta(
+                        minutes=total_travel_time + total_stay_time + travel_time_to_poi
+                    )
+                    if not self.validator.is_poi_available_at_time(place, arrival_time):
+                        continue
+                
+                combined = self.calculator.calculate_combined_score(
+                    place_idx=i,
+                    current_pos=current_pos,
+                    places=places,
+                    distance_matrix=distance_matrix,
+                    max_distance=max_distance,
+                    prev_bearing=prev_bearing,
+                    user_location=user_location
+                )
+                
+                # Kiểm tra thời gian khả thi
+                temp_travel = total_travel_time + self.calculator.calculate_travel_time(
                     distance_matrix[current_pos][i + 1],
                     transportation_mode
                 )
-                arrival_time = current_datetime + timedelta(
-                    minutes=total_travel_time + total_stay_time + travel_time_to_poi
+                temp_stay = total_stay_time + self.calculator.get_stay_time(
+                    places[i].get("poi_type", ""),
+                    places[i].get("stay_time")
                 )
-                if not self.validator.is_poi_available_at_time(place, arrival_time):
+                estimated_return = self.calculator.calculate_travel_time(
+                    distance_matrix[i + 1][0],
+                    transportation_mode
+                )
+                
+                if temp_travel + temp_stay + estimated_return > max_time_minutes:
                     continue
+                
+                candidates.append((i, combined))
             
-            combined = self.calculator.calculate_combined_score(
-                place_idx=i,
-                current_pos=current_pos,
-                places=places,
-                distance_matrix=distance_matrix,
-                max_distance=max_distance,
-                prev_bearing=prev_bearing,
-                user_location=user_location
-            )
-            
-            # Kiểm tra thời gian khả thi
-            temp_travel = total_travel_time + self.calculator.calculate_travel_time(
-                distance_matrix[current_pos][i + 1],
-                transportation_mode
-            )
-            temp_stay = total_stay_time + self.calculator.get_stay_time(
-                places[i].get("poi_type", ""),
-                places[i].get("stay_time")
-            )
-            estimated_return = self.calculator.calculate_travel_time(
-                distance_matrix[i + 1][0],
-                transportation_mode
-            )
-            
-            if temp_travel + temp_stay + estimated_return > max_time_minutes:
-                continue
-            
-            candidates.append((i, combined))
+            # Nếu không tìm được candidates và chưa đến max range, mở rộng thêm
+            if not candidates and bearing_range < RouteConfig.MAX_BEARING_RANGE:
+                bearing_range += RouteConfig.BEARING_EXPANSION_STEP
+                print(f"   ⚠️  Không tìm được POI, mở rộng sang ±{bearing_range:.1f}°")
+            else:
+                break  # Tìm được hoặc đã max range
         
         # Chọn POI tốt nhất
         if candidates:
@@ -499,54 +538,78 @@ class TargetRouteBuilder(BaseRouteBuilder):
         
         # Nếu không tìm thấy với category yêu cầu, bỏ qua category constraint và tìm lại
         if not candidates and required_category:
-            for i, place in enumerate(places):
-                if i in visited:
-                    continue
+            print(f"   ⚠️  Không tìm được POI với category '{required_category}', bỏ qua category constraint")
+            bearing_range = RouteConfig.INITIAL_BEARING_RANGE  # Reset về ±90°
+            
+            while not candidates and bearing_range <= RouteConfig.MAX_BEARING_RANGE:
+                if target_bearing is not None:
+                    print(f"🧭 Bearing filter (fallback): target={target_bearing:.1f}°, range=±{bearing_range:.1f}°")
                 
-                if exclude_restaurant and place.get('category') == 'Restaurant':
-                    continue
-                
-                if last_added_place and self.validator.is_same_food_type(last_added_place, place):
-                    continue
-                
-                if current_datetime:
-                    travel_time_to_poi = self.calculator.calculate_travel_time(
+                for i, place in enumerate(places):
+                    if i in visited:
+                        continue
+                    
+                    if exclude_restaurant and place.get('category') == 'Restaurant':
+                        continue
+                    
+                    if last_added_place and self.validator.is_same_food_type(last_added_place, place):
+                        continue
+                    
+                    # ⭐ BEARING FILTER: Áp dụng lại cho fallback
+                    if target_bearing is not None and current_lat is not None:
+                        poi_in_range = self.geo.is_poi_in_bearing_range(
+                            current_lat, current_lon,
+                            place["lat"], place["lon"],
+                            target_bearing, bearing_range
+                        )
+                        if not poi_in_range:
+                            continue
+                    
+                    if current_datetime:
+                        travel_time_to_poi = self.calculator.calculate_travel_time(
+                            distance_matrix[current_pos][i + 1],
+                            transportation_mode
+                        )
+                        arrival_time = current_datetime + timedelta(
+                            minutes=total_travel_time + total_stay_time + travel_time_to_poi
+                        )
+                        if not self.validator.is_poi_available_at_time(place, arrival_time):
+                            continue
+                    
+                    combined = self.calculator.calculate_combined_score(
+                        place_idx=i,
+                        current_pos=current_pos,
+                        places=places,
+                        distance_matrix=distance_matrix,
+                        max_distance=max_distance,
+                        prev_bearing=prev_bearing,
+                        user_location=user_location
+                    )
+                    
+                    temp_travel = total_travel_time + self.calculator.calculate_travel_time(
                         distance_matrix[current_pos][i + 1],
                         transportation_mode
                     )
-                    arrival_time = current_datetime + timedelta(
-                        minutes=total_travel_time + total_stay_time + travel_time_to_poi
+                    temp_stay = total_stay_time + self.calculator.get_stay_time(
+                        places[i].get("poi_type", ""),
+                        places[i].get("stay_time")
                     )
-                    if not self.validator.is_poi_available_at_time(place, arrival_time):
+                    estimated_return = self.calculator.calculate_travel_time(
+                        distance_matrix[i + 1][0],
+                        transportation_mode
+                    )
+                    
+                    if temp_travel + temp_stay + estimated_return > max_time_minutes:
                         continue
+                    
+                    candidates.append((i, combined))
                 
-                combined = self.calculator.calculate_combined_score(
-                    place_idx=i,
-                    current_pos=current_pos,
-                    places=places,
-                    distance_matrix=distance_matrix,
-                    max_distance=max_distance,
-                    prev_bearing=prev_bearing,
-                    user_location=user_location
-                )
-                
-                temp_travel = total_travel_time + self.calculator.calculate_travel_time(
-                    distance_matrix[current_pos][i + 1],
-                    transportation_mode
-                )
-                temp_stay = total_stay_time + self.calculator.get_stay_time(
-                    places[i].get("poi_type", ""),
-                    places[i].get("stay_time")
-                )
-                estimated_return = self.calculator.calculate_travel_time(
-                    distance_matrix[i + 1][0],
-                    transportation_mode
-                )
-                
-                if temp_travel + temp_stay + estimated_return > max_time_minutes:
-                    continue
-                
-                candidates.append((i, combined))
+                # Mở rộng nếu cần
+                if not candidates and bearing_range < RouteConfig.MAX_BEARING_RANGE:
+                    bearing_range += RouteConfig.BEARING_EXPANSION_STEP
+                    print(f"   ⚠️  Không tìm được POI (fallback), mở rộng sang ±{bearing_range:.1f}°")
+                else:
+                    break
             
             if candidates:
                 candidates.sort(key=lambda x: (-x[1], x[0]))

@@ -540,84 +540,122 @@ class DurationRouteBuilder(BaseRouteBuilder):
                 required_category = alternation_categories[0] if alternation_categories else None
         
         # ============================================================
-        # BƯỚC 6: Lọc candidates theo các điều kiện
+        # BƯỚC 6: Tính target_bearing và lọc candidates với bearing filter
         # ============================================================
+        # Tính target_bearing (hướng từ vị trí hiện tại về user - để tạo vòng cung)
+        target_bearing = None
+        current_lat, current_lon = None, None
+        if user_location:
+            if current_pos == 0:  # Từ user
+                current_lat, current_lon = user_location
+            else:
+                current_place = places[current_pos - 1]
+                current_lat, current_lon = current_place["lat"], current_place["lon"]
+            
+            # Hướng về user (để POI tiếp theo tiến dần về phía user)
+            target_bearing = self.geo.calculate_bearing(
+                current_lat, current_lon, user_location[0], user_location[1]
+            )
+        
         candidates = []
         last_added_place = places[route[-1]] if route else None
+        bearing_range = RouteConfig.INITIAL_BEARING_RANGE  # Bắt đầu với ±90°
         
-        for i, place in enumerate(places):
-            # --- Filter 1: Bỏ POI đã dùng ---
-            if i in visited:
-                continue
+        while not candidates and bearing_range <= RouteConfig.MAX_BEARING_RANGE:
+            # Debug: In thông tin bearing range hiện tại
+            if target_bearing is not None:
+                print(f"🧭 Bearing filter: target={target_bearing:.1f}°, range=±{bearing_range:.1f}°")
             
-            # --- Filter 2: Loại Restaurant nếu exclude_restaurant = True ---
-            # (Đang giữ restaurant cho meal time)
-            if exclude_restaurant and place.get('category') == 'Restaurant':
-                continue
-            
-            # --- Filter 3: Kiểm tra required_category (ép chọn loại POI) ---
-            # Nếu required_category == 'CAFE' thì match bằng substring (is_cafe_cat),
-            # ngược lại match bằng equality như trước
-            if required_category:
-                # Kiểm tra trường hợp đặc biệt khi yêu cầu là "Cafe" (xử lý khác với các category khác).
-                if required_category == 'Cafe':
-                    # Kiểm tra xem place có phải là cafe không bằng hàm is_cafe_cat  nếu ko thì bỏ qua nhảy qua POI tiếp thep
-                    if not is_cafe_cat(place.get('category')):
+            for i, place in enumerate(places):
+                # --- Filter 1: Bỏ POI đã dùng ---
+                if i in visited:
+                    continue
+                
+                # --- Filter 2: Loại Restaurant nếu exclude_restaurant = True ---
+                # (Đang giữ restaurant cho meal time)
+                if exclude_restaurant and place.get('category') == 'Restaurant':
+                    continue
+                
+                # --- Filter 3: Kiểm tra required_category (ép chọn loại POI) ---
+                # Nếu required_category == 'CAFE' thì match bằng substring (is_cafe_cat),
+                # ngược lại match bằng equality như trước
+                if required_category:
+                    # Kiểm tra trường hợp đặc biệt khi yêu cầu là "Cafe" (xử lý khác với các category khác).
+                    if required_category == 'Cafe':
+                        # Kiểm tra xem place có phải là cafe không bằng hàm is_cafe_cat  nếu ko thì bỏ qua nhảy qua POI tiếp thep
+                        if not is_cafe_cat(place.get('category')):
+                            continue
+                    else:
+                        if place.get('category') != required_category:
+                            continue
+                
+                # --- Filter 4: Tránh chọn 2 POI cùng loại đồ ăn liên tiếp ---
+                # Ví dụ: Phở → Bún chả (cùng Vietnamese food) → bỏ
+                if last_added_place and self.validator.is_same_food_type(last_added_place, place):
+                    continue
+                
+                # ⭐ BEARING FILTER: Chỉ POI trong phạm vi góc cho phép
+                if target_bearing is not None and current_lat is not None:
+                    poi_in_range = self.geo.is_poi_in_bearing_range(
+                        current_lat, current_lon,
+                        place["lat"], place["lon"],
+                        target_bearing, bearing_range
+                    )
+                    if not poi_in_range:
+                        continue  # Loại bỏ POI ngoài phạm vi
+                
+                # --- Filter 5: Kiểm tra opening hours (giờ mở cửa) ---
+                if current_datetime:
+                    travel_time_to_poi = self.calculator.calculate_travel_time(
+                        distance_matrix[current_pos][i + 1],
+                        transportation_mode
+                    )
+                    arrival_time = current_datetime + timedelta(
+                        minutes=total_travel_time + total_stay_time + travel_time_to_poi
+                    )
+                    # Bỏ nếu POI đóng cửa vào thời điểm arrival
+                    if not self.validator.is_poi_available_at_time(place, arrival_time):
                         continue
-                else:
-                    if place.get('category') != required_category:
-                        continue
-            
-            # --- Filter 4: Tránh chọn 2 POI cùng loại đồ ăn liên tiếp ---
-            # Ví dụ: Phở → Bún chả (cùng Vietnamese food) → bỏ
-            if last_added_place and self.validator.is_same_food_type(last_added_place, place):
-                continue
-            
-            # --- Filter 5: Kiểm tra opening hours (giờ mở cửa) ---
-            if current_datetime:
-                travel_time_to_poi = self.calculator.calculate_travel_time(
+                
+                # --- Tính combined score (70% similarity + 30% distance + angle penalty) ---
+                combined = self.calculator.calculate_combined_score(
+                    place_idx=i,
+                    current_pos=current_pos,
+                    places=places,
+                    distance_matrix=distance_matrix,
+                    max_distance=max_distance,
+                    prev_bearing=prev_bearing,
+                    user_location=user_location
+                )
+                
+                # --- Filter 6: Kiểm tra TIME BUDGET ---
+                # Phải đủ thời gian: (travel đến POI) + (stay tại POI) + (quay về user) <= max_time
+                temp_travel = total_travel_time + self.calculator.calculate_travel_time(
                     distance_matrix[current_pos][i + 1],
                     transportation_mode
                 )
-                arrival_time = current_datetime + timedelta(
-                    minutes=total_travel_time + total_stay_time + travel_time_to_poi
+                temp_stay = total_stay_time + self.calculator.get_stay_time(
+                    places[i].get("poi_type", ""),
+                    places[i].get("stay_time")
                 )
-                # Bỏ nếu POI đóng cửa vào thời điểm arrival
-                if not self.validator.is_poi_available_at_time(place, arrival_time):
+                estimated_return = self.calculator.calculate_travel_time(
+                    distance_matrix[i + 1][0],  # Từ POI này về user
+                    transportation_mode
+                )
+                
+                # Bỏ nếu vượt quá time budget
+                if temp_travel + temp_stay + estimated_return > max_time_minutes:
                     continue
+                
+                # ✅ POI này pass tất cả filters → thêm vào candidates
+                candidates.append((i, combined))
             
-            # --- Tính combined score (70% similarity + 30% distance + angle penalty) ---
-            combined = self.calculator.calculate_combined_score(
-                place_idx=i,
-                current_pos=current_pos,
-                places=places,
-                distance_matrix=distance_matrix,
-                max_distance=max_distance,
-                prev_bearing=prev_bearing,
-                user_location=user_location
-            )
-            
-            # --- Filter 6: Kiểm tra TIME BUDGET ---
-            # Phải đủ thời gian: (travel đến POI) + (stay tại POI) + (quay về user) <= max_time
-            temp_travel = total_travel_time + self.calculator.calculate_travel_time(
-                distance_matrix[current_pos][i + 1],
-                transportation_mode
-            )
-            temp_stay = total_stay_time + self.calculator.get_stay_time(
-                places[i].get("poi_type", ""),
-                places[i].get("stay_time")
-            )
-            estimated_return = self.calculator.calculate_travel_time(
-                distance_matrix[i + 1][0],  # Từ POI này về user
-                transportation_mode
-            )
-            
-            # Bỏ nếu vượt quá time budget
-            if temp_travel + temp_stay + estimated_return > max_time_minutes:
-                continue
-            
-            # ✅ POI này pass tất cả filters → thêm vào candidates
-            candidates.append((i, combined))
+            # Nếu không tìm được candidates và chưa đến max range, mở rộng thêm
+            if not candidates and bearing_range < RouteConfig.MAX_BEARING_RANGE:
+                bearing_range += RouteConfig.BEARING_EXPANSION_STEP
+                print(f"   ⚠️  Không tìm được POI, mở rộng sang ±{bearing_range:.1f}°")
+            else:
+                break  # Tìm được hoặc đã max range
         
         # ============================================================
         # BƯỚC 7: Chọn POI tốt nhất từ candidates
@@ -654,59 +692,83 @@ class DurationRouteBuilder(BaseRouteBuilder):
         # ============================================================
         # Bỏ constraint category và tìm lại (vẫn tôn trọng exclude_restaurant và các filter khác)
         if not candidates and required_category:
-            for i, place in enumerate(places):
-                if i in visited:
-                    continue
+            print(f"   ⚠️  Không tìm được POI với category '{required_category}', bỏ qua category constraint")
+            bearing_range = RouteConfig.INITIAL_BEARING_RANGE  # Reset về ±90°
+            
+            while not candidates and bearing_range <= RouteConfig.MAX_BEARING_RANGE:
+                if target_bearing is not None:
+                    print(f"🧭 Bearing filter (fallback): target={target_bearing:.1f}°, range=±{bearing_range:.1f}°")
                 
-                if exclude_restaurant and place.get('category') == 'Restaurant':
-                    continue
-                
-                # QUAN TRỌNG: Fallback vẫn phải tôn trọng cafe-sequence
-                # KHÔNG được chọn "Cafe" nếu should_insert_cafe=True và cafe_counter < 2
-                if should_insert_cafe and is_cafe_cat(place.get('category')) and cafe_counter < 2:
-                    continue
-                
-                if last_added_place and self.validator.is_same_food_type(last_added_place, place):
-                    continue
-                
-                if current_datetime:
-                    travel_time_to_poi = self.calculator.calculate_travel_time(
+                for i, place in enumerate(places):
+                    if i in visited:
+                        continue
+                    
+                    if exclude_restaurant and place.get('category') == 'Restaurant':
+                        continue
+                    
+                    # QUAN TRỌNG: Fallback vẫn phải tôn trọng cafe-sequence
+                    # KHÔNG được chọn "Cafe" nếu should_insert_cafe=True và cafe_counter < 2
+                    if should_insert_cafe and is_cafe_cat(place.get('category')) and cafe_counter < 2:
+                        continue
+                    
+                    if last_added_place and self.validator.is_same_food_type(last_added_place, place):
+                        continue
+                    
+                    # ⭐ BEARING FILTER: Áp dụng lại cho fallback
+                    if target_bearing is not None and current_lat is not None:
+                        poi_in_range = self.geo.is_poi_in_bearing_range(
+                            current_lat, current_lon,
+                            place["lat"], place["lon"],
+                            target_bearing, bearing_range
+                        )
+                        if not poi_in_range:
+                            continue
+                    
+                    if current_datetime:
+                        travel_time_to_poi = self.calculator.calculate_travel_time(
+                            distance_matrix[current_pos][i + 1],
+                            transportation_mode
+                        )
+                        arrival_time = current_datetime + timedelta(
+                            minutes=total_travel_time + total_stay_time + travel_time_to_poi
+                        )
+                        if not self.validator.is_poi_available_at_time(place, arrival_time):
+                            continue
+                    
+                    combined = self.calculator.calculate_combined_score(
+                        place_idx=i,
+                        current_pos=current_pos,
+                        places=places,
+                        distance_matrix=distance_matrix,
+                        max_distance=max_distance,
+                        prev_bearing=prev_bearing,
+                        user_location=user_location
+                    )
+                    
+                    temp_travel = total_travel_time + self.calculator.calculate_travel_time(
                         distance_matrix[current_pos][i + 1],
                         transportation_mode
                     )
-                    arrival_time = current_datetime + timedelta(
-                        minutes=total_travel_time + total_stay_time + travel_time_to_poi
+                    temp_stay = total_stay_time + self.calculator.get_stay_time(
+                        places[i].get("poi_type", ""),
+                        places[i].get("stay_time")
                     )
-                    if not self.validator.is_poi_available_at_time(place, arrival_time):
+                    estimated_return = self.calculator.calculate_travel_time(
+                        distance_matrix[i + 1][0],
+                        transportation_mode
+                    )
+                    
+                    if temp_travel + temp_stay + estimated_return > max_time_minutes:
                         continue
+                    
+                    candidates.append((i, combined))
                 
-                combined = self.calculator.calculate_combined_score(
-                    place_idx=i,
-                    current_pos=current_pos,
-                    places=places,
-                    distance_matrix=distance_matrix,
-                    max_distance=max_distance,
-                    prev_bearing=prev_bearing,
-                    user_location=user_location
-                )
-                
-                temp_travel = total_travel_time + self.calculator.calculate_travel_time(
-                    distance_matrix[current_pos][i + 1],
-                    transportation_mode
-                )
-                temp_stay = total_stay_time + self.calculator.get_stay_time(
-                    places[i].get("poi_type", ""),
-                    places[i].get("stay_time")
-                )
-                estimated_return = self.calculator.calculate_travel_time(
-                    distance_matrix[i + 1][0],
-                    transportation_mode
-                )
-                
-                if temp_travel + temp_stay + estimated_return > max_time_minutes:
-                    continue
-                
-                candidates.append((i, combined))
+                # Mở rộng nếu cần
+                if not candidates and bearing_range < RouteConfig.MAX_BEARING_RANGE:
+                    bearing_range += RouteConfig.BEARING_EXPANSION_STEP
+                    print(f"   ⚠️  Không tìm được POI (fallback), mở rộng sang ±{bearing_range:.1f}°")
+                else:
+                    break
             
             if candidates:
                 candidates.sort(key=lambda x: (-x[1], x[0]))
