@@ -79,6 +79,31 @@ class GeographicUtils:
             diff = 360 - diff
         return diff
 
+    @staticmethod
+    def is_within_bearing_range(
+        target_bearing: float,
+        candidate_bearing: float,
+        bearing_range: float
+    ) -> bool:
+        """
+        Kiểm tra xem bearing của candidate có nằm trong khoảng cho phép không
+        
+        Args:
+            target_bearing: Hướng mục tiêu (độ, 0-360)
+            candidate_bearing: Hướng của candidate (độ, 0-360)
+            bearing_range: Khoảng cho phép (±degrees), ví dụ 90 = ±90° (tổng 180°)
+            
+        Returns:
+            True nếu candidate nằm trong khoảng cho phép
+            
+        Ví dụ:
+            target_bearing = 90° (Đông)
+            bearing_range = 90°
+            → Chấp nhận POI có bearing từ 0° đến 180° (phía trước, nửa vòng tròn)
+        """
+        diff = GeographicUtils.calculate_bearing_difference(target_bearing, candidate_bearing)
+        return diff <= bearing_range
+
     def build_distance_matrix(
         self,
         user_location: Tuple[float, float],

@@ -474,12 +474,24 @@ class TargetRouteBuilder(BaseRouteBuilder):
             if temp_travel + temp_stay + estimated_return > max_time_minutes:
                 continue
             
-            candidates.append((i, combined))
+            candidates.append({'index': i, 'score': combined})
+        
+        # ============================================================
+        # Áp dụng bearing filter (lọc POI theo hướng di chuyển)
+        # ============================================================
+        if candidates and prev_bearing is not None:
+            candidates = self.filter_candidates_by_bearing(
+                candidates=candidates,
+                current_pos=current_pos,
+                prev_bearing=prev_bearing,
+                places=places,
+                user_location=user_location
+            )
         
         # Chọn POI tốt nhất
         if candidates:
-            candidates.sort(key=lambda x: (-x[1], x[0]))
-            best_idx = candidates[0][0]
+            candidates.sort(key=lambda x: (-x['score'], x['index']))
+            best_idx = candidates[0]['index']
             
             # 🔄 Reset cafe_counter khi chọn Restaurant hoặc Cafe (cả 2 đều là nơi dừng chân)
             # "Cafe & Bakery" KHÔNG reset - thuộc Food & Local Flavours, xen kẽ bình thường
@@ -546,12 +558,22 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 if temp_travel + temp_stay + estimated_return > max_time_minutes:
                     continue
                 
-                candidates.append((i, combined))
+                candidates.append({'index': i, 'score': combined})
+            
+            # Áp dụng bearing filter cho fallback candidates
+            if candidates and prev_bearing is not None:
+                candidates = self.filter_candidates_by_bearing(
+                    candidates=candidates,
+                    current_pos=current_pos,
+                    prev_bearing=prev_bearing,
+                    places=places,
+                    user_location=user_location
+                )
             
             if candidates:
-                candidates.sort(key=lambda x: (-x[1], x[0]))
+                candidates.sort(key=lambda x: (-x['score'], x['index']))
                 return {
-                    'index': candidates[0][0],
+                    'index': candidates[0]['index'],
                     'target_meal_type': None
                 }
         

@@ -1,0 +1,663 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bearing Algorithm Visualization</title>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: rgba(30, 41, 59, 0.7);
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent-color: #38bdf8;
+            --success-color: #4ade80;
+            --danger-color: #f472b6;
+            --border-color: rgba(255, 255, 255, 0.1);
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-primary);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .sidebar {
+            width: 350px;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            border-right: 1px solid var(--border-color);
+            padding: 24px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            box-shadow: 4px 0 24px rgba(0,0,0,0.2);
+            z-index: 10;
+            overflow-y: auto;
+        }
+
+        .main-content {
+            flex: 1;
+            position: relative;
+            background: radial-gradient(circle at center, #1e293b 0%, #0f172a 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            overflow: hidden;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            font-weight: 700;
+            margin: 0;
+            background: linear-gradient(to right, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        h2 {
+            font-size: 1rem;
+            color: var(--text-secondary);
+            margin: 0 0 12px 0;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            font-weight: 600;
+        }
+
+        .control-group {
+            background: rgba(255,255,255,0.03);
+            padding: 16px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+        }
+
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+
+        input[type="range"] {
+            width: 100%;
+            margin-bottom: 8px;
+            accent-color: var(--accent-color);
+        }
+
+        .value-display {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--accent-color);
+            float: right;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            border-radius: 8px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.95rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #38bdf8, #3b82f6);
+            color: white;
+            box-shadow: 0 4px 12px rgba(56, 189, 248, 0.3);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 16px rgba(56, 189, 248, 0.4);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.1);
+            color: var(--text-primary);
+            margin-top: 12px;
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255,255,255,0.15);
+        }
+
+        .legend {
+            margin-top: auto;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+
+        .info-panel {
+            position: absolute;
+            top: 24px;
+            right: 24px;
+            background: var(--card-bg);
+            backdrop-filter: blur(12px);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            width: 280px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+            pointer-events: none;
+        }
+
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+        }
+        
+        .stat-value {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        #canvas-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        canvas {
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+            border-radius: 4px;
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div>
+            <h1>Bearing Visualizer</h1>
+            <p style="color: var(--text-secondary); font-size: 0.9rem; margin-top: 8px;">
+                Visualizing the Route Builder's "Return-to-User" greedy strategy.
+            </p>
+        </div>
+
+        <div class="control-group">
+            <h2>Algorithm Params</h2>
+            
+            <label>
+                Bearing Range (±Degrees)
+                <span id="range-val" class="value-display">90°</span>
+            </label>
+            <input type="range" id="bearing-range" min="10" max="180" value="90">
+            
+            <label style="margin-top: 12px;">
+                Candidate Count
+                <span id="candidates-val" class="value-display">20</span>
+            </label>
+            <input type="range" id="candidate-count" min="5" max="50" value="20">
+        </div>
+
+        <div class="control-group">
+            <h2>Actions</h2>
+            <button class="btn-primary" id="btn-next">Selected Next Best POI</button>
+            <button class="btn-secondary" id="btn-reset">Reset Simulation</button>
+        </div>
+
+        <div class="legend">
+            <h2>Legend</h2>
+            <div class="legend-item">
+                <div class="dot" style="background: #ef4444; box-shadow: 0 0 8px #ef4444;"></div>
+                <span>User Start Location</span>
+            </div>
+            <div class="legend-item">
+                <div class="dot" style="background: #38bdf8; box-shadow: 0 0 8px #38bdf8;"></div>
+                <span>Current Location</span>
+            </div>
+            <div class="legend-item">
+                <div class="dot" style="background: #4ade80;"></div>
+                <span>Valid Candidate (In Cone)</span>
+            </div>
+            <div class="legend-item">
+                <div class="dot" style="background: rgba(148, 163, 184, 0.3);"></div>
+                <span>Invalid Candidate</span>
+            </div>
+            <div class="legend-item">
+                <div style="width: 12px; height: 12px; background: rgba(56, 189, 248, 0.2); border: 1px dashed #38bdf8;"></div>
+                <span>Bearing Range (Cone)</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="main-content">
+        <div id="canvas-container">
+            <canvas id="vizCanvas"></canvas>
+        </div>
+        
+        <div class="info-panel">
+            <h2 style="margin-bottom: 16px; color: var(--accent-color);">Current State</h2>
+            <div class="stat-row">
+                <span class="stat-label">Steps Taken:</span>
+                <span class="stat-value" id="step-count">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Target Bearing:</span>
+                <span class="stat-value" id="target-bearing">--</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Valid Candidates:</span>
+                <span class="stat-value" id="valid-candidates">--</span>
+            </div>
+            <div style="margin-top: 16px; font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4;">
+                The algorithm prioritizes points that lead back towards the user (User Location) within the specified cone, creating a loop route.
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Setup Canvas
+        const canvas = document.getElementById('vizCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvas-container');
+
+        // State
+        let width, height;
+        let userPose = { x: 0, y: 0 };
+        let currentPose = { x: 0, y: 0 };
+        let routePath = [];
+        let candidates = [];
+        let bearingRange = 90;
+        let numCandidates = 20;
+        let step = 0;
+
+        function resize() {
+            width = container.clientWidth - 40;
+            height = container.clientHeight - 40;
+            canvas.width = width;
+            canvas.height = height;
+            
+            if (step === 0) {
+                reset();
+            } else {
+                draw();
+            }
+        }
+
+        window.addEventListener('resize', resize);
+
+        // Utils
+        const toRad = (deg) => deg * Math.PI / 180;
+        const toDeg = (rad) => rad * 180 / Math.PI;
+
+        function getBearing(start, end) {
+            // Note: Canvas coordinates: y increases downwards.
+            // Math.atan2(y, x) -> 0 is right (East), positive is clockwise if y is down?
+            // Let's standardise: 0 is Up (North), clockwise.
+            // dx = end.x - start.x
+            // dy = end.y - start.y (reversed because screen Y is down) -> actually we treat screen as map.
+            // Let's stick to standard math angle first then convert.
+            // Math angle: 0 is Right (East), CCW is positive usually.
+            // But screen Y is down.
+            // Let's use standard map bearing: 0 is North (Up), Clockwise.
+            
+            const dx = end.x - start.x;
+            const dy = -(end.y - start.y); // Negative dy because screen Y is down, we want Up to be positive Y for calculation logic or just think vectors.
+            
+            // Standard atan2 (y, x) give angle from X axis.
+            // We want bearing.
+            // Bearing = atan2(dx, dy)
+            // if dx=1, dy=1 (NE), atan2(1,1) = 45 deg. Correct.
+            // if dx=1, dy=-1 (SE), atan2(1, -1) = 135 deg. Correct.
+            // if dx=-1, dy=-1 (SW), atan2(-1, -1) = -135 -> 225.
+            // if dx=-1, dy=1 (NW), atan2(-1, 1) = -45 -> 315.
+            
+            let angle = Math.atan2(dx, dy); // -PI to PI
+            let bearing = toDeg(angle);
+            if (bearing < 0) bearing += 360;
+            return bearing;
+        }
+
+        function isAngleInRange(angle, target, range) {
+            let diff = Math.abs(angle - target);
+            if (diff > 180) diff = 360 - diff;
+            return diff <= range;
+        }
+
+        function generateCandidates() {
+            candidates = [];
+            const margin = 50;
+            for (let i = 0; i < numCandidates; i++) {
+                candidates.push({
+                    x: margin + Math.random() * (width - margin * 2),
+                    y: margin + Math.random() * (height - margin * 2),
+                    id: i,
+                    visited: false
+                });
+            }
+        }
+
+        function reset() {
+            step = 0;
+            // Place user somewhat centrally but lower
+            userPose = { x: width / 2, y: height * 0.8 };
+            currentPose = { ...userPose };
+            routePath = [{...userPose}];
+            generateCandidates();
+            
+            // Initial candidates usually near user, but let's scatter random for demo
+            // Actually, let's keep random scattered.
+            
+            updateUI();
+            draw();
+        }
+
+        function getBestNext() {
+            // Logic mimicking the python script
+            // 1. Calculate target bearing (Current -> User)
+            const targetBearing = getBearing(currentPose, userPose);
+            
+            // 2. Filter valid candidates
+            // Filter by: Not visited, Inside Bearing Range
+            const valid = candidates.filter(p => {
+                if (p.visited) return false;
+                const b = getBearing(currentPose, p);
+                return isAngleInRange(b, targetBearing, bearingRange);
+            });
+
+            if (valid.length === 0) return null;
+
+            // 3. Score candidates
+            // Score = combined (simulating distance + angle)
+            // Simplified: Score = 1/Distance (closer is better) + Angle Bonus
+            // In python code: closer to user is usually better for "Return" phase, 
+            // but in exploration phase (middle), maybe we want to go OUT first?
+            // The python script says "Target bearing... toward user".
+            // So it seems it ALWAYS biases towards returning or staying in the "general direction" of home?
+            // "Hướng về user (để POI tiếp theo tiến dần về phía user)" -> Yes, tends to loop back.
+            // But if we start at user, target bearing is User->User undefined?
+            // Python handles 0 distance likely.
+            
+            // If current == user, we pick ANY good point (usually expanding).
+            // Let's simulate "Expansion" if step=0, else "Return".
+            
+            if (step === 0) {
+                // Pick furthest or just random close
+                // Let's pick a random one to start the chain away
+                return valid[Math.floor(Math.random() * valid.length)];
+            }
+
+            // Normal greedy step
+            let best = null;
+            let maxScore = -Infinity;
+
+            valid.forEach(p => {
+                const distToCurrent = Math.hypot(p.x - currentPose.x, p.y - currentPose.y);
+                const bearingToP = getBearing(currentPose, p);
+                
+                // Diff from target bearing
+                let angleDiff = Math.abs(bearingToP - targetBearing);
+                if (angleDiff > 180) angleDiff = 360 - angleDiff;
+                
+                // Score formula mock:
+                // We want to move somewhat, but obey the bearing.
+                // Let's prioritize ones that don't jump TOO far but also aren't tiny steps?
+                // The real code uses a complex weighted score.
+                // Let's just pick the one "closest to optimal bearing" to visualize the cone effect best.
+                // And maybe closest distance to user to show "Returning"?
+                
+                const distToUser = Math.hypot(p.x - userPose.x, p.y - userPose.y);
+                
+                // Simple Weighted Score
+                // Higher is better
+                const score = (1000 / (distToCurrent + 1)) * 0.5 + (180 - angleDiff) * 0.5;
+                
+                if (score > maxScore) {
+                    maxScore = score;
+                    best = p;
+                }
+            });
+            
+            return best;
+        }
+
+        function nextStep() {
+            const best = getBestNext();
+            if (best) {
+                best.visited = true;
+                currentPose = { ...best };
+                routePath.push({ ...currentPose });
+                step++;
+                updateUI();
+                draw();
+            } else {
+                alert("No valid candidates found in current bearing range! Try increasing the range.");
+            }
+        }
+
+        // Drawing
+        function draw() {
+            if (!ctx) return;
+            
+            // Clear
+            ctx.clearRect(0, 0, width, height);
+
+            // 1. Draw Grid (Subtle)
+            ctx.strokeStyle = "rgba(255,255,255,0.05)";
+            ctx.lineWidth = 1;
+            const gridSize = 50;
+            for(let x=0; x<width; x+=gridSize) {
+                ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,height); ctx.stroke();
+            }
+            for(let y=0; y<height; y+=gridSize) {
+                ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(width,y); ctx.stroke();
+            }
+
+            // 2. Draw candidates
+            // Calculate validity for coloring
+            const targetBearing = (step === 0 && routePath.length === 1) ? 0 : getBearing(currentPose, userPose);
+            // If step 0 (at user), bearing range usually irrelevant or we pick 360? 
+            // The python code says: if current_pos == 0 (user), target_bearing = calculate(user, user) -> 0 distance.
+            // Actually usually for first point, we scan differently or bearing is moot.
+            // Let's assume for Viz, if at user, we show 360 or just don't show cone.
+            
+            const showCone = routePath.length > 1;
+
+            candidates.forEach(p => {
+                if(p.visited) {
+                    // Draw checked
+                    ctx.fillStyle = "rgba(255,255,255,0.1)";
+                    ctx.beginPath();
+                    ctx.arc(p.x, p.y, 4, 0, Math.PI*2);
+                    ctx.fill();
+                    return;
+                }
+
+                let isValid = true;
+                if (showCone) {
+                    const b = getBearing(currentPose, p);
+                    isValid = isAngleInRange(b, targetBearing, bearingRange);
+                }
+
+                ctx.fillStyle = isValid ? "#4ade80" : "rgba(148, 163, 184, 0.2)";
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 6, 0, Math.PI*2);
+                ctx.fill();
+                
+                if (isValid) {
+                     ctx.shadowColor = "#4ade80";
+                     ctx.shadowBlur = 10;
+                     ctx.stroke();
+                     ctx.shadowBlur = 0;
+                }
+            });
+
+            // 3. Draw Route Lines
+            if (routePath.length > 1) {
+                ctx.beginPath();
+                ctx.strokeStyle = "#38bdf8";
+                ctx.lineWidth = 3;
+                ctx.moveTo(routePath[0].x, routePath[0].y);
+                for(let i=1; i<routePath.length; i++) {
+                    ctx.lineTo(routePath[i].x, routePath[i].y);
+                }
+                ctx.stroke();
+            }
+
+            // 4. Draw Cone
+            if (showCone) {
+                drawCone(currentPose, targetBearing, bearingRange);
+                // Draw Target Arrow
+                drawArrow(currentPose, userPose, "#f472b6");
+            }
+
+            // 5. Draw User & Current
+            // User
+            ctx.fillStyle = "#ef4444";
+            ctx.beginPath();
+            ctx.arc(userPose.x, userPose.y, 8, 0, Math.PI*2);
+            ctx.fill();
+            ctx.shadowColor = "#ef4444";
+            ctx.shadowBlur = 15;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+            
+            // Label User
+            ctx.fillStyle = "#fff";
+            ctx.font = "12px Inter";
+            ctx.fillText("User", userPose.x - 12, userPose.y + 20);
+
+            // Current
+            ctx.fillStyle = "#38bdf8";
+            ctx.beginPath();
+            ctx.arc(currentPose.x, currentPose.y, 8, 0, Math.PI*2);
+            ctx.fill();
+            ctx.shadowColor = "#38bdf8";
+            ctx.shadowBlur = 15;
+            ctx.stroke();
+            ctx.shadowBlur = 0;
+
+             // Label Current
+            if (step > 0) {
+                 ctx.fillStyle = "#fff";
+                 ctx.fillText("Current", currentPose.x - 20, currentPose.y - 15);
+            }
+        }
+
+        function drawCone(center, bearing, range) {
+            const length = Math.max(width, height) * 0.8; // Long enough
+            // bearing is 0=Up(North), clockwise.
+            // Canvas Arc: 0 is Right, clockwise.
+            // Convert bearing to canvas angle:
+            // Bearing 0 -> Angle -90 (-PI/2)
+            // Bearing 90 -> Angle 0
+            // Bearing 180 -> Angle 90 (PI/2)
+            // Canvas Angle = Bearing - 90 degrees ?
+            // Let's test: B=0(Up). C=-90. Correct.
+            // B=90(Right). C=0. Correct.
+            // B=180(Down). C=90. Correct.
+            // B=270(Left). C=180. Correct.
+            // So: CanvasAngle = Bearing - 90.
+            
+            const centerAngleIso = bearing - 90;
+            const startAngle = toRad(centerAngleIso - range);
+            const endAngle = toRad(centerAngleIso + range);
+
+            ctx.beginPath();
+            ctx.moveTo(center.x, center.y);
+            ctx.arc(center.x, center.y, length, startAngle, endAngle);
+            ctx.lineTo(center.x, center.y);
+            ctx.fillStyle = "rgba(56, 189, 248, 0.1)";
+            ctx.fill();
+            ctx.strokeStyle = "rgba(56, 189, 248, 0.4)";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([5, 5]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        function drawArrow(from, to, color) {
+            const headLen = 15;
+            const angle = Math.atan2(to.y - from.y, to.x - from.x);
+            
+            // Shorten the arrow so it doesn't overlap dots exactly
+            const dist = Math.hypot(to.x - from.x, to.y - from.y);
+            const shortDist = Math.max(0, dist - 20);
+            const endX = from.x + Math.cos(angle) * shortDist;
+            const endY = from.y + Math.sin(angle) * shortDist;
+
+            ctx.beginPath();
+            ctx.moveTo(from.x, from.y);
+            ctx.lineTo(endX, endY);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.stroke();
+
+            // Head
+            ctx.beginPath();
+            ctx.moveTo(endX, endY);
+            ctx.lineTo(endX - headLen * Math.cos(angle - Math.PI / 6), endY - headLen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(endX - headLen * Math.cos(angle + Math.PI / 6), endY - headLen * Math.sin(angle + Math.PI / 6));
+            ctx.lineTo(endX, endY);
+            ctx.fillStyle = color;
+            ctx.fill();
+        }
+
+        function updateUI() {
+            document.getElementById('step-count').innerText = step;
+            
+            const target = (step === 0 && routePath.length === 1) ? 0 : getBearing(currentPose, userPose);
+            document.getElementById('target-bearing').innerText = Math.round(target) + "°";
+
+            const showCone = routePath.length > 1;
+            const validCount = candidates.filter(p => {
+                if (p.visited) return false;
+                if (!showCone) return true;
+                const b = getBearing(currentPose, p);
+                return isAngleInRange(b, target, bearingRange);
+            }).length;
+            
+            document.getElementById('valid-candidates').innerText = validCount;
+        }
+
+        // Init
+        setTimeout(resize, 100);
+
+        // Events
+        document.getElementById('bearing-range').addEventListener('input', (e) => {
+            bearingRange = parseInt(e.target.value);
+            document.getElementById('range-val').innerText = bearingRange + "°";
+            draw();
+            updateUI();
+        });
+
+        document.getElementById('candidate-count').addEventListener('input', (e) => {
+            numCandidates = parseInt(e.target.value);
+            document.getElementById('candidates-val').innerText = numCandidates;
+            reset();
+        });
+
+        document.getElementById('btn-next').addEventListener('click', nextStep);
+        document.getElementById('btn-reset').addEventListener('click', reset);
+
+    </script>
+</body>
+</html>

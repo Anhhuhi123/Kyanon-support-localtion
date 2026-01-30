@@ -572,3 +572,72 @@ class BaseRouteBuilder:
             "efficiency": round(total_score / total_time * 100, 2),
             "places": route_places
         }
+    
+    def filter_candidates_by_bearing(
+        self,
+        candidates: List[Dict[str, Any]],
+        current_pos: int,
+        prev_bearing: float,
+        places: List[Dict[str, Any]],
+        user_location: Tuple[float, float]
+    ) -> List[Dict[str, Any]]:
+        """
+        Lọc candidates theo bearing range với cơ chế mở rộng dần
+        
+        Bắt đầu với bearing_range = 90° (±90°, nửa vòng tròn phía trước)
+        Nếu không tìm thấy POI nào, mở rộng thêm 30° mỗi lần
+        Tiếp tục đến khi tìm được POI hoặc đạt max_bearing_range
+        
+        Args:
+            candidates: Danh sách candidates đã được lọc qua các điều kiện khác
+            current_pos: Vị trí hiện tại (0 = user, 1-n = places)
+            prev_bearing: Hướng di chuyển trước đó (độ, 0-360)
+            places: Danh sách tất cả địa điểm
+            user_location: Tọa độ user (lat, lon)
+            
+        Returns:
+            Danh sách candidates nằm trong bearing range cho phép
+        """
+        if not candidates or prev_bearing is None:
+            return candidates
+        
+        # Lấy tọa độ điểm hiện tại
+        if current_pos == 0:  # Từ user
+            current_lat, current_lon = user_location
+        else:
+            current_place = places[current_pos - 1]
+            current_lat, current_lon = current_place["lat"], current_place["lon"]
+        
+        # Progressive bearing expansion
+        bearing_range = RouteConfig.INITIAL_BEARING_RANGE
+        max_range = RouteConfig.MAX_BEARING_RANGE
+        step = RouteConfig.BEARING_RANGE_EXPANSION_STEP
+        
+        while bearing_range <= max_range:
+            filtered = []
+            
+            for candidate in candidates:
+                place_idx = candidate['index']
+                candidate_place = places[place_idx]
+                
+                # Tính bearing từ vị trí hiện tại đến candidate
+                candidate_bearing = self.geo.calculate_bearing(
+                    current_lat, current_lon,
+                    candidate_place["lat"], candidate_place["lon"]
+                )
+                
+                # Kiểm tra xem candidate có nằm trong bearing range không
+                if self.geo.is_within_bearing_range(prev_bearing, candidate_bearing, bearing_range):
+                    filtered.append(candidate)
+            
+            if filtered:
+                print(f"🎯 Bearing filter: Tìm thấy {len(filtered)}/{len(candidates)} POI trong ±{bearing_range}° (prev_bearing={prev_bearing:.1f}°)")
+                return filtered
+            
+            # Không tìm thấy POI, mở rộng bearing range
+            print(f"⚠️  Bearing filter: Không tìm thấy POI trong ±{bearing_range}°, mở rộng thêm {step}°...")
+            bearing_range += step
+        
+        # Nếu vẫn không tìm thấy sau khi mở rộng tối đa, trả về tất cả candidates
+        print(f"⚠️  Bearing filter: Đã mở rộng đến ±{max_range}°, trả về tất cả {len(candidates)} candidates")
+        return candidates

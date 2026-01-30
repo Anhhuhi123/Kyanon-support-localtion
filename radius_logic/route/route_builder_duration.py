@@ -617,15 +617,27 @@ class DurationRouteBuilder(BaseRouteBuilder):
                 continue
             
             # ✅ POI này pass tất cả filters → thêm vào candidates
-            candidates.append((i, combined))
+            candidates.append({'index': i, 'score': combined})
+        
+        # ============================================================
+        # BƯỚC 6.5: Áp dụng bearing filter (lọc POI theo hướng di chuyển)
+        # ============================================================
+        if candidates and prev_bearing is not None:
+            candidates = self.filter_candidates_by_bearing(
+                candidates=candidates,
+                current_pos=current_pos,
+                prev_bearing=prev_bearing,
+                places=places,
+                user_location=user_location
+            )
         
         # ============================================================
         # BƯỚC 7: Chọn POI tốt nhất từ candidates
         # ============================================================
         if candidates:
             # Sort: combined score cao → thấp; nếu bằng nhau thì index nhỏ hơn (deterministic)
-            candidates.sort(key=lambda x: (-x[1], x[0]))
-            best_idx = candidates[0][0]
+            candidates.sort(key=lambda x: (-x['score'], x['index']))
+            best_idx = candidates[0]['index']
             
             # ============================================================
             # BƯỚC 8: Xác định có reset cafe_counter hay không
@@ -706,11 +718,21 @@ class DurationRouteBuilder(BaseRouteBuilder):
                 if temp_travel + temp_stay + estimated_return > max_time_minutes:
                     continue
                 
-                candidates.append((i, combined))
+                candidates.append({'index': i, 'score': combined})
+            
+            # Áp dụng bearing filter cho fallback candidates
+            if candidates and prev_bearing is not None:
+                candidates = self.filter_candidates_by_bearing(
+                    candidates=candidates,
+                    current_pos=current_pos,
+                    prev_bearing=prev_bearing,
+                    places=places,
+                    user_location=user_location
+                )
             
             if candidates:
-                candidates.sort(key=lambda x: (-x[1], x[0]))
-                best_idx = candidates[0][0]
+                candidates.sort(key=lambda x: (-x['score'], x['index']))
+                best_idx = candidates[0]['index']
                 
                 # Check category để xác định reset_cafe_counter (giống logic chính)
                 selected_cat = places[best_idx].get('category')

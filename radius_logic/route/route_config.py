@@ -59,6 +59,11 @@ class RouteConfig:
     # Bearing score mặc định (trung tính)
     DEFAULT_BEARING_SCORE = 0.5
     
+    # Bearing range filter (cone-based POI selection)
+    INITIAL_BEARING_RANGE = 90  # Bắt đầu với ±90° (tổng 180°, nửa vòng tròn phía trước)
+    BEARING_RANGE_EXPANSION_STEP = 30  # Mở rộng thêm 30° mỗi lần
+    MAX_BEARING_RANGE = 180  # Tối đa ±180° (toàn bộ 360°)
+    
     # Earth radius (km) cho Haversine
     EARTH_RADIUS_KM = 6371
     
