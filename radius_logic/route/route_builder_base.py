@@ -303,6 +303,80 @@ class BaseRouteBuilder:
 
         return lunch_inserted, dinner_inserted, cafe_counter, should_insert_cafe
     
+    def determine_route_direction(
+        self,
+        first_poi_idx: int,
+        places: List[Dict[str, Any]],
+        user_location: Tuple[float, float],
+        visited: set
+    ) -> str:
+        """
+        Xác định hướng rẽ cho toàn bộ route (right hoặc left)
+        
+        Logic:
+        - Nếu config = "right" → return "right"
+        - Nếu config = "left" → return "left"
+        - Nếu config = "auto":
+          - Tính bearing từ user → first POI
+          - Lọc tất cả POI còn lại thành right_cands và left_cands
+          - Chọn direction có nhiều candidates hơn
+          - Nếu bằng nhau → mặc định "right"
+        
+        Args:
+            first_poi_idx: Index của POI đầu tiên (0-based)
+            places: Danh sách POI đầy đủ
+            user_location: (lat, lon) của user
+            visited: Set các POI đã sử dụng
+            
+        Returns:
+            "right" hoặc "left"
+        """
+        # Kiểm tra config preference
+        preference = RouteConfig.CIRCULAR_DIRECTION_PREFERENCE.lower()
+        
+        if preference == "right":
+            return "right"
+        elif preference == "left":
+            return "left"
+        
+        # Auto mode: Chọn direction dựa trên số lượng POI candidates
+        first_poi = places[first_poi_idx]
+        
+        # Tính bearing từ user → first POI
+        initial_bearing = self.geo.calculate_bearing(
+            user_location[0], user_location[1],
+            first_poi["lat"], first_poi["lon"]
+        )
+        
+        # Lọc tất cả POI còn lại thành right_cands và left_cands
+        available_indices = [i for i in range(len(places)) if i not in visited]
+        
+        if not available_indices:
+            # Không có POI nào còn lại, mặc định "right"
+            return "right"
+        
+        right_cands, left_cands = self.geo.filter_perpendicular_candidates(
+            available_indices,
+            initial_bearing,
+            places,
+            first_poi["lat"],
+            first_poi["lon"],
+            RouteConfig.CIRCULAR_ANGLE_TOLERANCE
+        )
+        
+        # Chọn direction có nhiều candidates hơn
+        if len(right_cands) > len(left_cands):
+            direction = "right"
+        elif len(left_cands) > len(right_cands):
+            direction = "left"
+        else:
+            # Bằng nhau → mặc định "right"
+            direction = "right"
+        
+        print(f"🔄 Auto direction selection: {len(right_cands)} right candidates, {len(left_cands)} left candidates → {direction.upper()}")
+        
+        return direction
+    
     def select_last_poi(
         self,
         places: List[Dict[str, Any]],
@@ -319,7 +393,10 @@ class BaseRouteBuilder:
         should_insert_restaurant_for_meal: bool,
         meal_windows: Optional[Dict],
         lunch_restaurant_inserted: bool,
-        dinner_restaurant_inserted: bool
+        dinner_restaurant_inserted: bool,
+        prev_bearing: Optional[float] = None,
+        user_location: Optional[Tuple[float, float]] = None,
+        route_direction: Optional[str] = None
     ) -> Optional[int]:
         """
         Chọn POI cuối cùng gần user location để giảm thời gian về
@@ -365,11 +442,62 @@ class BaseRouteBuilder:
             print(f"🔍 LAST POI SEARCH @ Threshold {threshold_multiplier*100:.0f}% = {current_threshold:.3f}km")
             print(f"{'='*100}")
             
+            # ============================================================
+            # Circular Routing - Lọc POI theo góc 90° cho Last POI
+            # ============================================================
+            circular_filtered_indices = None
+            if RouteConfig.USE_CIRCULAR_ROUTING and prev_bearing is not None and user_location:
+                # Lấy vị trí hiện tại
+                if current_pos == 0:  # Từ user (unlikely for last POI)
+                    current_lat, current_lon = user_location
+                else:
+                    current_place = places[current_pos - 1]
+                    current_lat, current_lon = current_place["lat"], current_place["lon"]
+                
+                # Lọc tất cả POI chưa dùng theo góc 90°
+                available_indices = [i for i in range(len(places)) if i not in visited]
+                right_cands, left_cands = self.geo.filter_perpendicular_candidates(
+                    available_indices,
+                    prev_bearing,
+                    places,
+                    current_lat,
+                    current_lon,
+                    RouteConfig.CIRCULAR_ANGLE_TOLERANCE
+                )
+                
+                # Chỉ dùng hướng đã được chọn từ đầu route
+                if route_direction == "right":
+                    if right_cands:
+                        circular_filtered_indices = set(right_cands)
+                        print(f"🔄 Circular routing (LAST POI): Using RIGHT turn - {len(circular_filtered_indices)} POI (90° ±{RouteConfig.CIRCULAR_ANGLE_TOLERANCE}°)")
+                    else:
+                        print(f"⚠️ Circular routing (LAST POI): No RIGHT turn POIs, fallback to all candidates")
+                elif route_direction == "left":
+                    if left_cands:
+                        circular_filtered_indices = set(left_cands)
+                        print(f"🔄 Circular routing (LAST POI): Using LEFT turn - {len(circular_filtered_indices)} POI (270° ±{RouteConfig.CIRCULAR_ANGLE_TOLERANCE}°)")
+                    else:
+                        print(f"⚠️ Circular routing (LAST POI): No LEFT turn POIs, fallback to all candidates")
+                else:
+                    # No direction specified (backward compatibility)
+                    if right_cands:
+                        circular_filtered_indices = set(right_cands)
+                        print(f"🔄 Circular routing (LAST POI): Lọc {len(circular_filtered_indices)} POI từ RIGHT turn (90° ±{RouteConfig.CIRCULAR_ANGLE_TOLERANCE}°)")
+                    elif left_cands:
+                        circular_filtered_indices = set(left_cands)
+                        print(f"🔄 Circular routing (LAST POI): Lọc {len(circular_filtered_indices)} POI từ LEFT turn (270° ±{RouteConfig.CIRCULAR_ANGLE_TOLERANCE}°)")
+                    else:
+                        print(f"⚠️ Circular routing (LAST POI): Không tìm thấy POI trong góc 90°, fallback về logic cũ")
+            
             for i, place in enumerate(places):
                 reasons = []
                 
                 if i in visited:
                     reasons.append("visited")
+                
+                # Skip POI không nằm trong circular filter (nếu có)
+                if circular_filtered_indices is not None and i not in circular_filtered_indices:
+                    reasons.append("not_in_90deg_angle")
                 
                 # Logic lọc Restaurant cho POI cuối
                 if should_insert_restaurant_for_meal and place.get('category') == 'Restaurant':
@@ -446,7 +574,10 @@ class BaseRouteBuilder:
                         places=places,
                         distance_matrix=distance_matrix,
                         max_distance=max_distance,
-                        is_last=True
+                        is_last=True,
+                        prev_bearing=prev_bearing,
+                        user_location=user_location,
+                        use_circular_routing=RouteConfig.USE_CIRCULAR_ROUTING
                     )
                 
                 # In tất cả POI

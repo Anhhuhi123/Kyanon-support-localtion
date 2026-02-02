@@ -64,3 +64,43 @@ class RouteConfig:
     
     # Default rating nếu không có
     DEFAULT_RATING = 0.5
+    
+    # ============================================================
+    # CIRCULAR ROUTING CONFIG (90° turns instead of straight)
+    # ============================================================
+    
+    # Enable/disable circular routing (False = zigzag/straight, True = circular/90°)
+    USE_CIRCULAR_ROUTING = True
+    
+    # Tolerance for 90° turns (±degrees)
+    # - 5° = strict (85-95°, 265-275°) → route vuông vức
+    # - 10° = moderate (80-100°, 260-280°) → route cân bằng
+    # - 20° = loose (70-110°, 250-290°) → route linh hoạt
+    CIRCULAR_ANGLE_TOLERANCE = 10.0
+    
+    # Prefer right turn when both right and left candidates available
+    CIRCULAR_PREFER_RIGHT_TURN = True
+    
+    # Direction preference for circular routing
+    # Options:
+    # - "right": Always turn right (clockwise route)
+    # - "left": Always turn left (counter-clockwise route)
+    # - "auto": Automatically pick direction with more POI candidates from first POI
+    CIRCULAR_DIRECTION_PREFERENCE = "auto"
+    
+    # Bearing score weights cho circular routing (middle POI)
+    # Tăng weight của bearing để ép POI theo góc 90°
+    MIDDLE_POI_WEIGHTS_CIRCULAR = {
+        "distance": 0.3,
+        "similarity": 0.1,
+        "rating": 0.2,
+        "bearing": 0.4  # Tăng weight để ưu tiên 90°
+    }
+    
+    # Bearing score weights cho circular routing (last POI)
+    LAST_POI_WEIGHTS_CIRCULAR = {
+        "distance": 0.4,
+        "similarity": 0.1,
+        "rating": 0.2,
+        "bearing": 0.3  # Vẫn ưu tiên gần user nhưng có bearing
+    }

@@ -111,3 +111,71 @@ class GeographicUtils:
                 matrix[j][i] = dist  # Ma trận đối xứng
         
         return matrix
+
+    def filter_perpendicular_candidates(
+        self,
+        candidates: List[int],
+        prev_bearing: float,
+        places: List[Dict[str, Any]],
+        current_lat: float,
+        current_lon: float,
+        tolerance: float = 10.0
+    ) -> Tuple[List[int], List[int]]:
+        """
+        Lọc candidates thành 2 nhóm: right turn (90°) và left turn (270°)
+        
+        Dùng cho circular routing để tìm POI tạo góc vuông với hướng di chuyển hiện tại.
+        
+        Args:
+            candidates: List POI indices chưa sử dụng
+            prev_bearing: Hướng di chuyển trước đó (0-360°)
+            places: Danh sách POI đầy đủ
+            current_lat: Latitude vị trí hiện tại
+            current_lon: Longitude vị trí hiện tại
+            tolerance: Dung sai góc (mặc định ±10°)
+            
+        Returns:
+            (right_candidates, left_candidates): 
+            - right_candidates: POI nằm ở góc 80-100° (rẽ phải)
+            - left_candidates: POI nằm ở góc 260-280° (rẽ trái)
+            
+        Examples:
+            >>> geo = GeographicUtils()
+            >>> # prev_bearing = 0° (hướng Bắc)
+            >>> # Rẽ phải = 90° (Đông), Rẽ trái = 270° (Tây)
+            >>> right, left = geo.filter_perpendicular_candidates(
+            ...     candidates=[0, 1, 2],
+            ...     prev_bearing=0,
+            ...     places=poi_list,
+            ...     current_lat=21.0,
+            ...     current_lon=105.0,
+            ...     tolerance=10.0
+            ... )
+        """
+        right_candidates = []  # 80-100° (right turn)
+        left_candidates = []   # 260-280° (left turn)
+        
+        # Tính target bearings cho right và left turn
+        target_right = (prev_bearing + 90) % 360  # Rẽ phải 90°
+        target_left = (prev_bearing - 90) % 360   # Rẽ trái 90° (= +270°)
+        
+        for idx in candidates:
+            poi = places[idx]
+            
+            # Tính bearing từ vị trí hiện tại đến POI này
+            bearing_to_poi = self.calculate_bearing(
+                current_lat, current_lon,
+                poi["lat"], poi["lon"]
+            )
+            
+            # Check right turn (90° ±tolerance)
+            diff_right = self.calculate_bearing_difference(target_right, bearing_to_poi)
+            if diff_right <= tolerance:
+                right_candidates.append(idx)
+            
+            # Check left turn (270° ±tolerance)
+            diff_left = self.calculate_bearing_difference(target_left, bearing_to_poi)
+            if diff_left <= tolerance:
+                left_candidates.append(idx)
+        
+        return right_candidates, left_candidates

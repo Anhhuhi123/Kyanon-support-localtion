@@ -44,7 +44,8 @@ class Calculator:
         is_last: bool = False,
         start_pos_index: Optional[int] = None,
         prev_bearing: Optional[float] = None,
-        user_location: Optional[Tuple[float, float]] = None
+        user_location: Optional[Tuple[float, float]] = None,
+        use_circular_routing: bool = False
     ) -> float:
         """
         Tính điểm kết hợp: distance + similarity + rating + bearing (hướng)
@@ -108,8 +109,13 @@ class Calculator:
             # Tính độ chênh lệch góc (0-180)
             bearing_diff = self.geo.calculate_bearing_difference(prev_bearing, current_bearing)
             
-            # Chuyển thành điểm: 0° (cùng hướng) = 1.0, 180° (ngược hướng) = 0.0
-            bearing_score = 1.0 - (bearing_diff / 180.0)
+            # Chọn công thức bearing score dựa trên routing mode
+            if use_circular_routing:
+                # Circular routing: 90° (vuông góc) = 1.0, 0°/180° = 0.0
+                bearing_score = self.calculate_circular_bearing_score(bearing_diff)
+            else:
+                # Zigzag routing (default): 0° (cùng hướng) = 1.0, 180° (ngược hướng) = 0.0
+                bearing_score = 1.0 - (bearing_diff / 180.0)
         
         # Tính combined score theo công thức
         if is_first:
@@ -122,31 +128,92 @@ class Calculator:
             )
         elif is_last:
             # POI cuối: ưu tiên gần user
-            weights = RouteConfig.LAST_POI_WEIGHTS
-            combined = (
-                weights["distance"] * distance_score +
-                weights["similarity"] * similarity +
-                weights["rating"] * rating
-            )
+            # Sử dụng circular weights nếu bật circular routing
+            if use_circular_routing and hasattr(RouteConfig, 'LAST_POI_WEIGHTS_CIRCULAR'):
+                weights = RouteConfig.LAST_POI_WEIGHTS_CIRCULAR
+                combined = (
+                    weights["distance"] * distance_score +
+                    weights["similarity"] * similarity +
+                    weights["rating"] * rating +
+                    weights["bearing"] * bearing_score
+                )
+            else:
+                weights = RouteConfig.LAST_POI_WEIGHTS
+                combined = (
+                    weights["distance"] * distance_score +
+                    weights["similarity"] * similarity +
+                    weights["rating"] * rating
+                )
         else:
             # POI giữa: thêm yếu tố bearing để tránh zíc zắc
-            if similarity >= RouteConfig.SIMILARITY_THRESHOLD:
+            # Sử dụng circular weights nếu bật circular routing
+            if use_circular_routing and hasattr(RouteConfig, 'MIDDLE_POI_WEIGHTS_CIRCULAR'):
+                weights = RouteConfig.MIDDLE_POI_WEIGHTS_CIRCULAR
+                combined = (
+                    weights["distance"] * distance_score +
+                    weights["similarity"] * similarity +
+                    weights["rating"] * rating +
+                    weights["bearing"] * bearing_score
+                )
+            elif similarity >= RouteConfig.SIMILARITY_THRESHOLD:
                 weights = RouteConfig.MIDDLE_POI_WEIGHTS_HIGH_SIMILARITY
                 combined = (
-                weights["distance"] * distance_score +
-                weights["similarity"] * similarity +
-                weights["rating"] * rating +
-                weights["bearing"] * bearing_score
-            )
+                    weights["distance"] * distance_score +
+                    weights["similarity"] * similarity +
+                    weights["rating"] * rating +
+                    weights["bearing"] * bearing_score
+                )
             else:
                 weights = RouteConfig.MIDDLE_POI_WEIGHTS_LOW_SIMILARITY
                 combined = (
-                weights["distance"] * distance_score +
-                weights["similarity"] * similarity +
-                weights["rating"] * rating +
-                weights["bearing"] * bearing_score
-            )
+                    weights["distance"] * distance_score +
+                    weights["similarity"] * similarity +
+                    weights["rating"] * rating +
+                    weights["bearing"] * bearing_score
+                )
         
         return combined
+
+    def calculate_circular_bearing_score(self, bearing_diff: float) -> float:
+        """
+        Tính bearing score cho circular routing (ưu tiên 90°)
+        
+        Điểm cao nhất tại:
+        - 90° (rẽ trái/phải) → score = 1.0
+        - 270° (rẽ trái/phải ngược chiều) → score = 1.0
+        
+        Điểm thấp nhất tại:
+        - 0° (đi thẳng) → score = 0.0
+        - 180° (quay đầu) → score = 0.0
+        
+        Args:
+            bearing_diff: Độ chênh lệch góc giữa 2 vectors (0-360°)
+            
+        Returns:
+            score (0.0-1.0): Cao = vuông góc (tốt), thấp = thẳng/ngược (tệ)
+        
+        Examples:
+            >>> calc = Calculator(geo)
+            >>> calc.calculate_circular_bearing_score(90)   # Perfect right angle
+            1.0
+            >>> calc.calculate_circular_bearing_score(80)   # Within tolerance
+            0.889
+            >>> calc.calculate_circular_bearing_score(0)    # Straight line
+            0.0
+            >>> calc.calculate_circular_bearing_score(180)  # U-turn
+            0.0
+        """
+        # Normalize to 0-180°
+        if bearing_diff > 180:
+            bearing_diff = 360 - bearing_diff
+        
+        # Calculate distance from ideal 90°
+        diff_from_90 = abs(bearing_diff - 90)
+        
+        # Score: peak at 90°, drop to 0 at 0° and 180°
+        # Formula: 1.0 - (diff_from_90 / 90.0)
+        score = 1.0 - (diff_from_90 / 90.0)
+        
+        return max(0.0, score)
 
     

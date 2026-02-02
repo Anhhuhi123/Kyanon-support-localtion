@@ -18,6 +18,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
 from utils.time_utils import TimeUtils
 from .route_builder_base import BaseRouteBuilder
+from .route_config import RouteConfig
 
 class TargetRouteBuilder(BaseRouteBuilder):
     """
@@ -185,6 +186,14 @@ class TargetRouteBuilder(BaseRouteBuilder):
             distance_matrix, transportation_mode, current_datetime, should_insert_cafe
         )
         
+        # Xác định hướng rẽ cho toàn bộ route (consistent direction)
+        route_direction = None
+        if RouteConfig.USE_CIRCULAR_ROUTING:
+            route_direction = self.determine_route_direction(
+                best_first, places, user_location, visited
+            )
+            print(f"🔄 Route direction: {route_direction.upper()} turn (maintained throughout route)\n")
+        
         # Print thông báo POI đầu
         if should_insert_restaurant_for_meal:
             first_poi = places[best_first]
@@ -211,7 +220,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 all_categories, category_sequence, should_insert_restaurant_for_meal,
                 meal_windows, need_lunch_restaurant, need_dinner_restaurant,
                 lunch_restaurant_inserted, dinner_restaurant_inserted,
-                should_insert_cafe, cafe_counter
+                should_insert_cafe, cafe_counter, route_direction
             )
             
             if best_next is None:
@@ -283,7 +292,8 @@ class TargetRouteBuilder(BaseRouteBuilder):
             places, visited, current_pos, distance_matrix, max_radius,
             transportation_mode, max_distance, total_travel_time, total_stay_time,
             max_time_minutes, current_datetime, should_insert_restaurant_for_meal,
-            meal_windows, lunch_restaurant_inserted, dinner_restaurant_inserted
+            meal_windows, lunch_restaurant_inserted, dinner_restaurant_inserted,
+            prev_bearing, user_location, route_direction
         )
         
         if best_last is not None:
@@ -323,7 +333,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
         current_datetime, prev_bearing, user_location, all_categories, category_sequence,
         should_insert_restaurant_for_meal, meal_windows, need_lunch_restaurant,
         need_dinner_restaurant, lunch_restaurant_inserted, dinner_restaurant_inserted,
-        should_insert_cafe: bool = False, cafe_counter: int = 0
+        should_insert_cafe: bool = False, cafe_counter: int = 0, route_direction: Optional[str] = None
     ) -> Optional[Dict[str, Any]]:
         """Chọn POI giữa với logic xen kẽ category, meal priority và cafe-sequence"""
         
@@ -454,7 +464,8 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 distance_matrix=distance_matrix,
                 max_distance=max_distance,
                 prev_bearing=prev_bearing,
-                user_location=user_location
+                user_location=user_location,
+                use_circular_routing=RouteConfig.USE_CIRCULAR_ROUTING
             )
             
             # Kiểm tra thời gian khả thi
@@ -475,6 +486,52 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 continue
             
             candidates.append((i, combined))
+        
+        # ============================================================
+        # Circular Routing - Lọc POI theo góc 90°
+        # ============================================================
+        if RouteConfig.USE_CIRCULAR_ROUTING and prev_bearing is not None and candidates:
+            # Lấy vị trí hiện tại
+            if current_pos == 0:  # Từ user
+                current_lat, current_lon = user_location
+            else:
+                current_place = places[current_pos - 1]
+                current_lat, current_lon = current_place["lat"], current_place["lon"]
+            
+            # Lọc candidates thành right turn (90°) và left turn (270°)
+            candidate_indices = [i for i, _ in candidates]
+            right_cands, left_cands = self.geo.filter_perpendicular_candidates(
+                candidate_indices,
+                prev_bearing,
+                places,
+                current_lat,
+                current_lon,
+                RouteConfig.CIRCULAR_ANGLE_TOLERANCE
+            )
+            
+            # Chỉ dùng hướng đã được chọn từ đầu route
+            if route_direction == "right":
+                if right_cands:
+                    candidates = [(i, combined) for i, combined in candidates if i in right_cands]
+                    print(f"🔄 Using RIGHT turn - {len(candidates)} POI (90° ±{RouteConfig.CIRCULAR_ANGLE_TOLERANCE}°)")
+                else:
+                    print(f"⚠️ No RIGHT turn POIs, fallback to all candidates")
+            elif route_direction == "left":
+                if left_cands:
+                    candidates = [(i, combined) for i, combined in candidates if i in left_cands]
+                    print(f"🔄 Using LEFT turn - {len(candidates)} POI (270° ±{RouteConfig.CIRCULAR_ANGLE_TOLERANCE}°)")
+                else:
+                    print(f"⚠️ No LEFT turn POIs, fallback to all candidates")
+            else:
+                # No direction specified (backward compatibility)
+                if right_cands:
+                    candidates = [(i, combined) for i, combined in candidates if i in right_cands]
+                    print(f"🔄 Circular routing: Chọn {len(candidates)} POI từ RIGHT turn (90° ±{RouteConfig.CIRCULAR_ANGLE_TOLERANCE}°)")
+                elif left_cands:
+                    candidates = [(i, combined) for i, combined in candidates if i in left_cands]
+                    print(f"🔄 Circular routing: Chọn {len(candidates)} POI từ LEFT turn (270° ±{RouteConfig.CIRCULAR_ANGLE_TOLERANCE}°)")
+                else:
+                    print(f"⚠️ Circular routing: Không tìm thấy POI trong góc 90°, fallback về logic cũ")
         
         # Chọn POI tốt nhất
         if candidates:
@@ -527,7 +584,8 @@ class TargetRouteBuilder(BaseRouteBuilder):
                     distance_matrix=distance_matrix,
                     max_distance=max_distance,
                     prev_bearing=prev_bearing,
-                    user_location=user_location
+                    user_location=user_location,
+                    use_circular_routing=RouteConfig.USE_CIRCULAR_ROUTING
                 )
                 
                 temp_travel = total_travel_time + self.calculator.calculate_travel_time(
