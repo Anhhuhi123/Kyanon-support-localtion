@@ -141,3 +141,5 @@ def patch_html_file(input_file, output_file):
 if __name__ == '__main__':
     patch_html_file('visualization_advanced.html', 'visualization_advanced_fixed.html')
     print("\n🎉 Done! Open visualization_advanced_fixed.html")
+    print("visuzalization algorithm bearing test")
+
