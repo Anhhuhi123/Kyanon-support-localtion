@@ -1,0 +1,1036 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Route Algorithm Visualization - Advanced Analysis</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 2000px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: visible; /* cho phép panel bên phải không bị cắt */
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .content {
+            display: grid;
+            grid-template-columns: 320px 1fr 460px; /* tăng rộng cột phải từ 380px -> 460px */
+            gap: 0;
+        }
+        
+        .controls {
+            background: #f8f9fa;
+            padding: 30px;
+            border-right: 1px solid #e0e0e0;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+        }
+        
+        .sidebar-right {
+            background: #f8f9fa;
+            padding: 30px;
+            border-left: 1px solid #e0e0e0;
+            max-height: calc(100vh - 200px);
+            overflow-y: auto;
+            min-width: 420px; /* đảm bảo không bị co quá nhỏ */
+        }
+        
+        .control-group {
+            margin-bottom: 25px;
+        }
+        
+        .control-group label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+            font-size: 13px;
+        }
+        
+        .control-group input[type="number"],
+        .control-group select {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        
+        .control-group input[type="number"]:focus,
+        .control-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        
+        button {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+            margin-bottom: 10px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .canvas-container {
+            padding: 30px 18px 30px 30px; /* giảm padding phải để nhường chỗ cho sidebar */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #fafafa;
+        }
+        
+        canvas {
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            background: #ffffff;
+            cursor: default;
+        }
+        
+        canvas.clickable {
+            cursor: pointer;
+        }
+        
+        .info-box {
+            background: #e3f2fd;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #1976d2;
+        }
+        
+        .poi-list {
+            max-height: 180px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 10px;
+            font-size: 12px;
+        }
+        
+        .poi-item {
+            padding: 8px;
+            margin-bottom: 5px;
+            background: #f5f5f5;
+            border-radius: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+        
+        .poi-item:hover {
+            background: #eeeeee;
+        }
+        
+        .stat-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        
+        .stat-item {
+            background: white;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+        
+        .stat-label {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 18px;
+            font-weight: 700;
+            color: #667eea;
+        }
+        
+        .mode-toggle {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .mode-btn {
+            padding: 10px;
+            background: white;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            text-align: center;
+        }
+        
+        .mode-btn:hover {
+            border-color: #667eea;
+        }
+        
+        .mode-btn.active {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+        
+        .analysis-panel {
+            background: white;
+            border: 2px solid #667eea;
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .analysis-header {
+            font-size: 14px;
+            font-weight: 700;
+            color: #667eea;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e3f2fd;
+        }
+        
+        .formula-box {
+            background: #f5f7ff;
+            padding: 12px;
+            border-radius: 6px;
+            margin: 10px 0;
+            font-size: 11px;
+            font-family: 'Courier New', monospace;
+            line-height: 1.6;
+        }
+        
+        .formula-box strong {
+            color: #667eea;
+        }
+        
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+            font-size: 11px;
+        }
+        
+        .comparison-table th {
+            background: #667eea;
+            color: white;
+            padding: 8px 4px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 10px;
+        }
+        
+        .comparison-table td {
+            padding: 6px 4px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .comparison-table tr:hover {
+            background: #f5f7ff;
+        }
+        
+        .comparison-table .winner {
+            background: #e8f5e9;
+            font-weight: 700;
+        }
+        
+        .score-breakdown {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-top: 10px;
+        }
+        
+        .score-item {
+            background: #f5f5f5;
+            padding: 8px;
+            border-radius: 5px;
+            font-size: 11px;
+        }
+        
+        .score-label {
+            color: #666;
+            margin-bottom: 3px;
+            font-size: 10px;
+        }
+        
+        .score-value {
+            font-weight: 700;
+            color: #667eea;
+            font-size: 14px;
+        }
+        
+        .score-bar {
+            height: 6px;
+            background: #e0e0e0;
+            border-radius: 3px;
+            overflow: hidden;
+            margin-top: 3px;
+        }
+        
+        .score-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea, #764ba2);
+            transition: width 0.3s;
+        }
+        
+        .highlight {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🗺️ Route Algorithm Visualization - Advanced</h1>
+            <p>H3 Radius Search + Bearing Analysis + POI Scoring Breakdown</p>
+        </div>
+        
+        <div class="content">
+            <div class="controls">
+                <div class="info-box" id="modeInfo">
+                    <strong>🗺️ Route Mode:</strong> Xem route hoàn chỉnh với góc bearing
+                </div>
+                
+                <div class="control-group">
+                    <label>🌍 Bán kính tìm kiếm (m)</label>
+                    <input type="number" id="radius" value="2000" min="500" max="5000" step="100">
+                </div>
+                
+                <div class="control-group">
+                    <label>🚶 Phương tiện di chuyển</label>
+                    <select id="transportMode">
+                        <option value="WALKING">🚶 Đi bộ</option>
+                        <option value="BICYCLING">🚴 Xe đạp</option>
+                        <option value="DRIVING">🚗 Ô tô</option>
+                        <option value="MOTORBIKE" selected>🏍️ Xe máy</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label>📍 Số lượng POI</label>
+                    <input type="number" id="poiCount" value="12" min="5" max="30" step="1">
+                </div>
+                
+                <div class="control-group">
+                    <label>🎯 Số POI trong route</label>
+                    <input type="number" id="targetPois" value="5" min="3" max="10" step="1">
+                </div>
+                
+                <button onclick="generateNewScenario()">🔄 Tạo kịch bản mới</button>
+                <button onclick="buildRoute()">🛣️ Xây dựng Route</button>
+                <button onclick="clearRoute()">🗑️ Xóa Route</button>
+                
+                <div class="mode-toggle" style="margin-top: 20px;">
+                    <button class="mode-btn active" id="modeRoute" onclick="setMode('route')">🗺️ Route</button>
+                    <button class="mode-btn" id="modeAnalyze" onclick="setMode('analyze')">🔍 Analyze</button>
+                </div>
+                
+                <div class="stat-grid">
+                    <div class="stat-item">
+                        <div class="stat-label">POI tìm được</div>
+                        <div class="stat-value" id="statPois">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">POI trong route</div>
+                        <div class="stat-value" id="statRoute">0</div>
+                    </div>
+                </div>
+                
+                <div class="control-group" style="margin-top: 20px;">
+                    <label>📋 Danh sách POI trong Route</label>
+                    <div class="poi-list" id="poiList">
+                        <em>Chưa có route...</em>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="canvas-container">
+                <canvas id="canvas" width="900" height="900"></canvas>
+            </div>
+            
+            <div class="sidebar-right">
+                <div class="analysis-panel">
+                    <div class="analysis-header" id="analysisHeader">
+                        🔍 Phân tích POI
+                    </div>
+                    <div id="analysisContent">
+                        <p style="color: #999; font-size: 12px; text-align: center; padding: 20px;">
+                            Chuyển sang <strong>Analyze Mode</strong> và click vào POI trong route để xem phân tích chi tiết
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        // State
+        let userLocation = { x: 450, y: 450, lat: 21.0285, lon: 105.8542 };
+        let pois = [];
+        let route = [];
+        let currentRadius = 2000;
+        let currentMode = 'route';
+        let selectedPOI = null;
+        
+        const EARTH_RADIUS_KM = 6371;
+        const PIXEL_PER_METER = 0.17;
+        
+        const POI_CATEGORIES = [
+            'Restaurant', 'Cafe & Bakery', 'Museum', 'Park', 
+            'Shopping', 'Entertainment', 'Temple', 'Landmark'
+        ];
+        
+        // Utility functions
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = EARTH_RADIUS_KM;
+            const lat1Rad = lat1 * Math.PI / 180;
+            const lat2Rad = lat2 * Math.PI / 180;
+            const deltaLat = (lat2 - lat1) * Math.PI / 180;
+            const deltaLon = (lon2 - lon1) * Math.PI / 180;
+            
+            const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) +
+                      Math.cos(lat1Rad) * Math.cos(lat2Rad) *
+                      Math.sin(deltaLon/2) * Math.sin(deltaLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            
+            return R * c * 1000;
+        }
+        
+        function calculateBearing(lat1, lon1, lat2, lon2) {
+            const lat1Rad = lat1 * Math.PI / 180;
+            const lat2Rad = lat2 * Math.PI / 180;
+            const deltaLon = (lon2 - lon1) * Math.PI / 180;
+            
+            const x = Math.sin(deltaLon) * Math.cos(lat2Rad);
+            const y = Math.cos(lat1Rad) * Math.sin(lat2Rad) - 
+                      Math.sin(lat1Rad) * Math.cos(lat2Rad) * Math.cos(deltaLon);
+            
+            let bearing = Math.atan2(x, y) * 180 / Math.PI;
+            return (bearing + 360) % 360;
+        }
+        
+        function calculateBearingDifference(bearing1, bearing2) {
+            let diff = Math.abs(bearing1 - bearing2);
+            if (diff > 180) diff = 360 - diff;
+            return diff;
+        }
+        
+        function metersToPixels(meters) {
+            return meters * PIXEL_PER_METER;
+        }
+        
+        function generatePOIs(count, radiusMeters) {
+            pois = [];
+            const radiusPixels = metersToPixels(radiusMeters);
+            
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * 2 * Math.PI;
+                const r = Math.sqrt(Math.random()) * radiusPixels;
+                
+                const x = userLocation.x + r * Math.cos(angle);
+                const y = userLocation.y + r * Math.sin(angle);
+                
+                const deltaLat = (y - userLocation.y) / metersToPixels(111320);
+                const deltaLon = (x - userLocation.x) / metersToPixels(111320 * Math.cos(userLocation.lat * Math.PI / 180));
+                
+                const lat = userLocation.lat - deltaLat;
+                const lon = userLocation.lon + deltaLon;
+                
+                const category = POI_CATEGORIES[Math.floor(Math.random() * POI_CATEGORIES.length)];
+                const distance = calculateDistance(userLocation.lat, userLocation.lon, lat, lon);
+                const bearing = calculateBearing(userLocation.lat, userLocation.lon, lat, lon);
+                
+                pois.push({
+                    id: `POI${i + 1}`,
+                    x, y, lat, lon,
+                    category,
+                    name: `${category} ${i + 1}`,
+                    score: Math.random() * 0.5 + 0.5,
+                    rating: Math.random() * 0.3 + 0.7,
+                    distance,
+                    bearing
+                });
+            }
+        }
+        
+        function calculateCombinedScore(poi, currentPoi, prevBearing, isFirst, isLast, maxDistance) {
+            const similarity = poi.score;
+            const rating = poi.rating;
+            
+            let distance;
+            if (isLast) {
+                distance = calculateDistance(poi.lat, poi.lon, userLocation.lat, userLocation.lon);
+            } else {
+                distance = calculateDistance(currentPoi.lat, currentPoi.lon, poi.lat, poi.lon);
+            }
+            
+            const normalizedDistance = distance / maxDistance;
+            const distanceScore = 1 - normalizedDistance;
+            
+            let bearingScore = 0.5;
+            if (!isFirst && !isLast && prevBearing !== null) {
+                const currentBearing = calculateBearing(currentPoi.lat, currentPoi.lon, poi.lat, poi.lon);
+                const bearingDiff = calculateBearingDifference(prevBearing, currentBearing);
+                bearingScore = 1.0 - (bearingDiff / 180.0);
+            }
+            
+            let combined;
+            if (isFirst) {
+                combined = 0.1 * distanceScore + 0.45 * similarity + 0.45 * rating;
+            } else if (isLast) {
+                combined = 0.4 * distanceScore + 0.3 * similarity + 0.3 * rating;
+            } else {
+                if (similarity >= 0.8) {
+                    combined = 0.15 * distanceScore + 0.5 * similarity + 0.3 * rating + 0.05 * bearingScore;
+                } else {
+                    combined = 0.25 * distanceScore + 0.1 * similarity + 0.4 * rating + 0.25 * bearingScore;
+                }
+            }
+            
+            return { combined, bearingScore, distanceScore };
+        }
+        
+        function buildRouteAlgorithm(targetCount) {
+            if (pois.length === 0) {
+                alert('⚠️ Vui lòng tạo POI trước!');
+                return [];
+            }
+            
+            const routePois = [];
+            const used = new Set();
+            const maxDistance = currentRadius;
+            
+            let currentPoi = {
+                lat: userLocation.lat,
+                lon: userLocation.lon,
+                x: userLocation.x,
+                y: userLocation.y
+            };
+            let prevBearing = null;
+            
+            for (let step = 0; step < targetCount; step++) {
+                const isFirst = (step === 0);
+                const isLast = (step === targetCount - 1);
+                
+                let bestPoi = null;
+                let bestScore = -Infinity;
+                
+                for (const poi of pois) {
+                    if (used.has(poi.id)) continue;
+                    
+                    const { combined, bearingScore, distanceScore } = calculateCombinedScore(
+                        poi, currentPoi, prevBearing, isFirst, isLast, maxDistance
+                    );
+                    
+                    if (combined > bestScore) {
+                        bestScore = combined;
+                        bestPoi = { ...poi, combinedScore: combined, bearingScore, distanceScore };
+                    }
+                }
+                
+                if (!bestPoi) break;
+                
+                routePois.push(bestPoi);
+                used.add(bestPoi.id);
+                
+                if (!isLast) {
+                    prevBearing = calculateBearing(currentPoi.lat, currentPoi.lon, bestPoi.lat, bestPoi.lon);
+                }
+                currentPoi = bestPoi;
+            }
+            
+            return routePois;
+        }
+        
+        // Drawing functions
+        function drawCircle(x, y, radius, fillColor, strokeColor, lineWidth = 1) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, 2 * Math.PI);
+            if (fillColor) {
+                ctx.fillStyle = fillColor;
+                ctx.fill();
+            }
+            if (strokeColor) {
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = lineWidth;
+                ctx.stroke();
+            }
+        }
+        
+        function drawLine(x1, y1, x2, y2, color, lineWidth = 1, dash = []) {
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
+            ctx.setLineDash(dash);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+        
+        function drawText(text, x, y, color = '#000', fontSize = 12, align = 'center') {
+            ctx.fillStyle = color;
+            ctx.font = `${fontSize}px Arial`;
+            ctx.textAlign = align;
+            ctx.fillText(text, x, y);
+        }
+        
+        function drawArrow(x1, y1, x2, y2, color, lineWidth = 2) {
+            const headlen = 10;
+            const angle = Math.atan2(y2 - y1, x2 - x1);
+            
+            drawLine(x1, y1, x2, y2, color, lineWidth);
+            
+            ctx.beginPath();
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(x2 - headlen * Math.cos(angle - Math.PI / 6), y2 - headlen * Math.sin(angle - Math.PI / 6));
+            ctx.lineTo(x2 - headlen * Math.cos(angle + Math.PI / 6), y2 - headlen * Math.sin(angle + Math.PI / 6));
+            ctx.closePath();
+            ctx.fillStyle = color;
+            ctx.fill();
+        }
+        
+        function drawArc(x, y, radius, startAngle, endAngle, color, lineWidth = 2) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, startAngle * Math.PI / 180 - Math.PI / 2, endAngle * Math.PI / 180 - Math.PI / 2);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = lineWidth;
+            ctx.stroke();
+        }
+        
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const radiusPixels = metersToPixels(currentRadius);
+            drawCircle(userLocation.x, userLocation.y, radiusPixels, 'rgba(158, 158, 158, 0.08)', 'rgba(158, 158, 158, 0.4)', 2);
+            
+            if (currentMode === 'analyze' && selectedPOI) {
+                // ANALYZE MODE
+                const routeIndex = route.findIndex(r => r.id === selectedPOI.id);
+                const currentPoi = routeIndex === 0 ? userLocation : route[routeIndex - 1];
+                
+                // Draw lines to all POIs with bearings
+                for (const poi of pois) {
+                    const bearing = calculateBearing(currentPoi.lat, currentPoi.lon, poi.lat, poi.lon);
+                    
+                    let lineColor, lineWidth;
+                    if (poi.id === selectedPOI.id) {
+                        lineColor = '#4CAF50';
+                        lineWidth = 4;
+                    } else if (route.some(r => r.id === poi.id)) {
+                        lineColor = 'rgba(255, 87, 34, 0.4)';
+                        lineWidth = 2;
+                    } else {
+                        lineColor = 'rgba(33, 150, 243, 0.15)';
+                        lineWidth = 1;
+                    }
+                    
+                    drawLine(currentPoi.x, currentPoi.y, poi.x, poi.y, lineColor, lineWidth, [3, 3]);
+                    
+                    // Show bearing angle
+                    if (poi.id === selectedPOI.id) {
+                        const midX = (currentPoi.x + poi.x) / 2;
+                        const midY = (currentPoi.y + poi.y) / 2;
+                        drawText(`${bearing.toFixed(0)}°`, midX, midY - 5, '#4CAF50', 14, 'center');
+                    }
+                }
+                
+                // Draw bearing angle arc if not first POI
+                if (routeIndex > 0) {
+                    const prevPoi = routeIndex === 1 ? userLocation : route[routeIndex - 2];
+                    const prevBearing = calculateBearing(prevPoi.lat, prevPoi.lon, currentPoi.lat, currentPoi.lon);
+                    const currBearing = calculateBearing(currentPoi.lat, currentPoi.lon, selectedPOI.lat, selectedPOI.lon);
+                    const bearingDiff = calculateBearingDifference(prevBearing, currBearing);
+                    
+                    // Draw arc
+                    const arcRadius = 60;
+                    drawArc(currentPoi.x, currentPoi.y, arcRadius, prevBearing, currBearing, '#9C27B0', 3);
+                    drawText(`Δ${bearingDiff.toFixed(0)}°`, currentPoi.x, currentPoi.y - arcRadius - 15, '#9C27B0', 14, 'center');
+                }
+            } else {
+                // ROUTE MODE
+                for (const poi of pois) {
+                    const isInRoute = route.some(r => r.id === poi.id);
+                    if (!isInRoute) {
+                        drawLine(userLocation.x, userLocation.y, poi.x, poi.y, 'rgba(33, 150, 243, 0.15)', 1, [3, 3]);
+                    }
+                }
+                
+                if (route.length > 0) {
+                    // Draw route with bearing angles
+                    const firstBearing = calculateBearing(userLocation.lat, userLocation.lon, route[0].lat, route[0].lon);
+                    drawArrow(userLocation.x, userLocation.y, route[0].x, route[0].y, '#FF5722', 3);
+                    const midX1 = (userLocation.x + route[0].x) / 2;
+                    const midY1 = (userLocation.y + route[0].y) / 2;
+                    drawText(`${firstBearing.toFixed(0)}°`, midX1, midY1 - 10, '#FF5722', 12, 'center');
+                    
+                    for (let i = 0; i < route.length - 1; i++) {
+                        const bearing = calculateBearing(route[i].lat, route[i].lon, route[i+1].lat, route[i+1].lon);
+                        drawArrow(route[i].x, route[i].y, route[i+1].x, route[i+1].y, '#FF5722', 3);
+                        const midX = (route[i].x + route[i+1].x) / 2;
+                        const midY = (route[i].y + route[i+1].y) / 2;
+                        drawText(`${bearing.toFixed(0)}°`, midX, midY - 10, '#FF5722', 12, 'center');
+                    }
+                    
+                    const lastBearing = calculateBearing(route[route.length-1].lat, route[route.length-1].lon, userLocation.lat, userLocation.lon);
+                    drawArrow(route[route.length-1].x, route[route.length-1].y, userLocation.x, userLocation.y, '#FF5722', 3);
+                    const midXLast = (route[route.length-1].x + userLocation.x) / 2;
+                    const midYLast = (route[route.length-1].y + userLocation.y) / 2;
+                    drawText(`${lastBearing.toFixed(0)}°`, midXLast, midYLast - 10, '#FF5722', 12, 'center');
+                }
+            }
+            
+            // Draw POIs
+            for (const poi of pois) {
+                const isInRoute = route.some(r => r.id === poi.id);
+                const isSelected = selectedPOI && poi.id === selectedPOI.id;
+                
+                let poiRadius, poiColor, strokeWidth;
+                if (isSelected) {
+                    poiRadius = 14;
+                    poiColor = '#4CAF50';
+                    strokeWidth = 4;
+                } else if (isInRoute) {
+                    poiRadius = 9;
+                    poiColor = '#FF5722';
+                    strokeWidth = 2;
+                } else {
+                    poiRadius = 6;
+                    poiColor = '#2196F3';
+                    strokeWidth = 2;
+                }
+                
+                drawCircle(poi.x, poi.y, poiRadius, poiColor, '#fff', strokeWidth);
+                
+                if (isInRoute) {
+                    const routeIndex = route.findIndex(r => r.id === poi.id);
+                    drawText(`${routeIndex + 1}`, poi.x, poi.y - (isSelected ? 22 : 18), poiColor, isSelected ? 16 : 13, 'center');
+                }
+            }
+            
+            // Draw user
+            drawCircle(userLocation.x, userLocation.y, 14, '#4CAF50', '#fff', 3);
+            drawText('USER', userLocation.x, userLocation.y + 28, '#4CAF50', 15, 'center');
+            
+            // Draw compass
+            const compassR = radiusPixels + 40;
+            drawText('N ↑', userLocation.x, userLocation.y - compassR, '#666', 14, 'center');
+            drawText('S ↓', userLocation.x, userLocation.y + compassR + 10, '#666', 14, 'center');
+            drawText('E →', userLocation.x + compassR, userLocation.y + 5, '#666', 14, 'center');
+            drawText('← W', userLocation.x - compassR, userLocation.y + 5, '#666', 14, 'center');
+        }
+        
+        // Mode management
+        function setMode(mode) {
+            currentMode = mode;
+            document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+            document.getElementById(mode === 'route' ? 'modeRoute' : 'modeAnalyze').classList.add('active');
+            
+            const infoBox = document.getElementById('modeInfo');
+            if (mode === 'route') {
+                infoBox.innerHTML = '<strong>🗺️ Route Mode:</strong> Xem route hoàn chỉnh với góc bearing';
+                selectedPOI = null;
+                canvas.classList.remove('clickable');
+                document.getElementById('analysisHeader').textContent = '🔍 Phân tích POI';
+                document.getElementById('analysisContent').innerHTML = '<p style="color: #999; font-size: 12px; text-align: center; padding: 20px;">Chuyển sang <strong>Analyze Mode</strong> và click vào POI trong route để xem phân tích chi tiết</p>';
+            } else {
+                infoBox.innerHTML = '<strong>🔍 Analyze Mode:</strong> Click vào POI trong route để xem phân tích chi tiết';
+                canvas.classList.add('clickable');
+            }
+            
+            render();
+        }
+        
+        // Canvas click handler
+        canvas.addEventListener('click', (e) => {
+            if (currentMode !== 'analyze' || route.length === 0) return;
+            
+            const rect = canvas.getBoundingClientRect();
+            const clickX = e.clientX - rect.left;
+            const clickY = e.clientY - rect.top;
+            
+            for (const poi of route) {
+                const distance = Math.sqrt(Math.pow(clickX - poi.x, 2) + Math.pow(clickY - poi.y, 2));
+                if (distance <= 15) {
+                    selectPOIForAnalysis(poi);
+                    return;
+                }
+            }
+        });
+        
+        function selectPOIForAnalysis(poi) {
+            selectedPOI = poi;
+            
+            const routeIndex = route.findIndex(r => r.id === poi.id);
+            const isFirst = routeIndex === 0;
+            const isLast = routeIndex === route.length - 1;
+            
+            let currentPoi = routeIndex === 0 ? userLocation : route[routeIndex - 1];
+            let prevBearing = null;
+            
+            if (routeIndex > 0) {
+                const prevPoi = routeIndex === 1 ? userLocation : route[routeIndex - 2];
+                prevBearing = calculateBearing(prevPoi.lat, prevPoi.lon, currentPoi.lat, currentPoi.lon);
+            }
+            
+            // Calculate comparisons
+            const comparisons = [];
+            const used = new Set(route.map(r => r.id));
+            
+            for (const otherPoi of pois) {
+                if (used.has(otherPoi.id) && otherPoi.id !== poi.id) continue;
+                
+                const { combined, bearingScore, distanceScore } = calculateCombinedScore(
+                    otherPoi, currentPoi, prevBearing, isFirst, isLast, currentRadius
+                );
+                
+                const bearingToPoi = calculateBearing(currentPoi.lat, currentPoi.lon, otherPoi.lat, otherPoi.lon);
+                const distanceToPoi = calculateDistance(currentPoi.lat, currentPoi.lon, otherPoi.lat, otherPoi.lon);
+                
+                comparisons.push({
+                    poi: otherPoi,
+                    score: combined,
+                    bearingScore: bearingScore,
+                    distanceScore: distanceScore,
+                    bearing: bearingToPoi,
+                    distance: distanceToPoi,
+                    isSelected: otherPoi.id === poi.id
+                });
+            }
+            
+            comparisons.sort((a, b) => b.score - a.score);
+            displayAnalysis(poi, comparisons, routeIndex, isFirst, isLast, prevBearing);
+            render();
+        }
+        
+        function displayAnalysis(poi, comparisons, routeIndex, isFirst, isLast, prevBearing) {
+            document.getElementById('analysisHeader').textContent = `🔍 ${poi.name} (#${routeIndex + 1})`;
+            
+            const selectedComp = comparisons.find(c => c.isSelected);
+            
+            let html = '';
+            
+            // Formula
+            if (isFirst) {
+                html += `
+                    <div class="formula-box">
+                        <strong>📌 POI đầu tiên:</strong><br>
+                        combined = 0.1×dist + 0.45×sim + 0.45×rating<br><br>
+                        = 0.1×${selectedComp.distanceScore.toFixed(3)} + 0.45×${poi.score.toFixed(3)} + 0.45×${poi.rating.toFixed(3)}<br>
+                        <strong>= ${selectedComp.score.toFixed(4)}</strong>
+                    </div>
+                `;
+            } else if (isLast) {
+                html += `
+                    <div class="formula-box">
+                        <strong>🏁 POI cuối (về User):</strong><br>
+                        combined = 0.4×dist + 0.3×sim + 0.3×rating<br><br>
+                        = 0.4×${selectedComp.distanceScore.toFixed(3)} + 0.3×${poi.score.toFixed(3)} + 0.3×${poi.rating.toFixed(3)}<br>
+                        <strong>= ${selectedComp.score.toFixed(4)}</strong>
+                    </div>
+                `;
+            } else {
+                const isHighSim = poi.score >= 0.8;
+                const w = isHighSim ? 
+                    {d:0.15, s:0.5, r:0.3, b:0.05} : 
+                    {d:0.25, s:0.1, r:0.4, b:0.25};
+                html += `
+                    <div class="formula-box">
+                        <strong>🔄 POI giữa (${isHighSim ? 'High' : 'Low'} similarity):</strong><br>
+                        combined = ${w.d}×dist + ${w.s}×sim + ${w.r}×rating + ${w.b}×bearing<br><br>
+                        = ${w.d}×${selectedComp.distanceScore.toFixed(3)} + ${w.s}×${poi.score.toFixed(3)} + ${w.r}×${poi.rating.toFixed(3)} + ${w.b}×${selectedComp.bearingScore.toFixed(3)}<br>
+                        <strong>= ${selectedComp.score.toFixed(4)}</strong>
+                    </div>
+                `;
+            }
+            
+            // Score breakdown
+            html += `
+                <div class="score-breakdown">
+                    <div class="score-item">
+                        <div class="score-label">📏 Distance Score</div>
+                        <div class="score-value">${(selectedComp.distanceScore * 100).toFixed(0)}%</div>
+                        <div class="score-bar"><div class="score-fill" style="width: ${selectedComp.distanceScore * 100}%"></div></div>
+                    </div>
+                    <div class="score-item">
+                        <div class="score-label">🎯 Similarity</div>
+                        <div class="score-value">${(poi.score * 100).toFixed(0)}%</div>
+                        <div class="score-bar"><div class="score-fill" style="width: ${poi.score * 100}%"></div></div>
+                    </div>
+                    <div class="score-item">
+                        <div class="score-label">⭐ Rating</div>
+                        <div class="score-value">${(poi.rating * 100).toFixed(0)}%</div>
+                        <div class="score-bar"><div class="score-fill" style="width: ${poi.rating * 100}%"></div></div>
+                    </div>
+                    <div class="score-item">
+                        <div class="score-label">🧭 Bearing Score</div>
+                        <div class="score-value">${(selectedComp.bearingScore * 100).toFixed(0)}%</div>
+                        <div class="score-bar"><div class="score-fill" style="width: ${selectedComp.bearingScore * 100}%"></div></div>
+                    </div>
+                </div>
+            `;
+            
+            // Comparison table
+            html += `
+                <h4 style="margin: 15px 0 10px 0; font-size: 12px; color: #666; font-weight: 600;">
+                    📊 So sánh top POI candidates:
+                </h4>
+                <table class="comparison-table">
+                    <thead>
+                        <tr>
+                            <th>POI</th>
+                            <th>Score</th>
+                            <th>Dist(m)</th>
+                            <th>Bearing°</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+            `;
+            
+            for (let i = 0; i < Math.min(8, comparisons.length); i++) {
+                const c = comparisons[i];
+                html += `
+                    <tr class="${c.isSelected ? 'winner' : ''}">
+                        <td>${c.isSelected ? '✓ ' : ''}${c.poi.name}</td>
+                        <td><strong>${c.score.toFixed(4)}</strong></td>
+                        <td>${c.distance.toFixed(0)}m</td>
+                        <td>${c.bearing.toFixed(0)}°</td>
+                    </tr>
+                `;
+            }
+            
+            html += '</tbody></table>';
+            
+            // Reasoning
+            html += `
+                <div class="formula-box" style="margin-top: 15px; background: #e8f5e9;">
+                    <strong style="color: #4CAF50;">💡 Lý do chọn POI này:</strong><br>
+                    • Combined score cao nhất: <strong>${selectedComp.score.toFixed(4)}</strong><br>
+                    • Distance: ${selectedComp.distance.toFixed(0)}m từ POI trước<br>
+                    • Similarity: ${(poi.score * 100).toFixed(0)}% (${poi.score >= 0.8 ? 'cao' : 'trung bình'})<br>
+                    • Rating: ${(poi.rating * 5).toFixed(1)}/5 ⭐<br>
+                    ${!isFirst && !isLast ? `• Bearing score: ${(selectedComp.bearingScore * 100).toFixed(0)}% (góc hợp lý)` : ''}
+                </div>
+            `;
+            
+            document.getElementById('analysisContent').innerHTML = html;
+        }
+        
+        // UI handlers
+        function generateNewScenario() {
+            currentRadius = parseInt(document.getElementById('radius').value);
+            const poiCount = parseInt(document.getElementById('poiCount').value);
+            
+            generatePOIs(poiCount, currentRadius);
+            route = [];
+            selectedPOI = null;
+            
+            updateStats();
+            updatePOIList();
+            render();
+        }
+        
+        function buildRoute() {
+            const targetCount = parseInt(document.getElementById('targetPois').value);
+            route = buildRouteAlgorithm(targetCount);
+            
+            updateStats();
+            updatePOIList();
+            render();
+        }
+        
+        function clearRoute() {
+            route = [];
+            selectedPOI = null;
+            updateStats();
+            updatePOIList();
+            render();
+        }
+        
+        function updateStats() {
+            document.getElementById('statPois').textContent = pois.length;
+            document.getElementById('statRoute').textContent = route.length;
+        }
+        
+        function updatePOIList() {
+            const listEl = document.getElementById('poiList');
+            if (route.length === 0) {
+                listEl.innerHTML = '<em>Chưa có route...</em>';
+                return;
+            }
+            
+            listEl.innerHTML = route.map((poi, idx) => {
+                const distance = (poi.distance / 1000).toFixed(2);
+                const bearing = poi.bearing.toFixed(0);
+                return `
+                    <div class="poi-item">
+                        <span><strong>${idx + 1}.</strong> ${poi.name}</span>
+                        <span style="font-size: 11px; color: #666;">${distance}km / ${bearing}°</span>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        // Initialize
+        generateNewScenario();
+    </script>
+</body>
+</html>
