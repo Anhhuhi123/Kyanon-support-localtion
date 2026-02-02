@@ -8,7 +8,6 @@ from pydantics.poi import ConfirmReplaceRequest, PoiRequest
 from services.poi_service import PoiService
 from services.ingest_poi_to_qdrant import IngestPoiToQdrantService
 router = APIRouter(prefix="/api/v1/poi", tags=["Poi"])
-
 # Service instance sẽ được set từ server.py startup event
 poi_service: PoiService = None
 search_service = None  # Will be set from server.py
@@ -50,7 +49,7 @@ async def confirm_replace_poi(req: ConfirmReplaceRequest):
     """
     if search_service is None:
         raise HTTPException(status_code=500, detail="Search service not initialized")
-    
+
     try:
         result = await search_service.confirm_replace_poi(
             user_id=req.user_id,
