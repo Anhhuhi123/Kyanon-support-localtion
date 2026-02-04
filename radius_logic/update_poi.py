@@ -5,7 +5,7 @@ Xử lý logic cập nhật POI trong route: chọn POI mới, tính khoảng c�
 from typing import Optional, Dict, List, Any, Tuple
 from datetime import datetime
 from radius_logic.route.geographic_utils import GeographicUtils
-
+from radius_logic.route.route_config import RouteConfig
 
 class POIUpdateService:
     """Service xử lý logic update POI trong route"""
@@ -236,6 +236,7 @@ class POIUpdateService:
             "main_subcategory": poi_data.get('main_subcategory'),
             "specialization": poi_data.get('specialization'),
             "category": category,
+            "stay_time_minutes": float(poi_data.get('stay_time')) if poi_data.get('stay_time') is not None else RouteConfig.DEFAULT_STAY_TIME,
             "address": poi_data.get('address', ''),
             "lat": poi_data.get('lat'),
             "lon": poi_data.get('lon'),
