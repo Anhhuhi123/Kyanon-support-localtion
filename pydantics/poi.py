@@ -3,7 +3,6 @@ from typing import List
 from uuid import UUID
 from typing import Optional
 
-
 class PoiRequest(BaseModel):
     add: List[UUID] = Field(default_factory=list)
     delete: List[UUID] = Field(default_factory=list)

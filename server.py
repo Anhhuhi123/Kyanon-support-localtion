@@ -126,6 +126,10 @@ async def startup_event():
     # Lấy pools từ config
     db_pool = get_db_pool()
     redis_client = get_redis_client()
+
+    # Set cache service singleton cho route API
+    from services.cache_search import CacheSearch
+    route_api_module._cache_service = CacheSearch(redis_client)
     
     # 3. Khởi tạo AsyncQdrantClient
     async_qdrant = AsyncQdrantClient(

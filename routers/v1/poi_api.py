@@ -30,7 +30,7 @@ def get_search_service():
 async def get_poi_visited(user_id: UserIdRequest):
     """
     Lấy danh sách POI đã visit của user (ASYNC)
-    
+
     Args:
         user_id: UUID của user
         

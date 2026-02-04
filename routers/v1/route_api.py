@@ -7,12 +7,14 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 from fastapi import APIRouter, HTTPException
 from services.route_service import RouteService
+from services.cache_search import CacheSearch
 from pydantics.route import SemanticSearchRequest, CombinedSearchRequest, RouteSearchRequest, UpdatePOIRequest
 
 # Initialize router
 router = APIRouter(prefix="/api/v1/route", tags=["Route Search (Qdrant)"])
 # Service instance sẽ được set từ api_server.py startup event
 _route_service_instance = None
+_cache_service = None
 
 def get_semantic_service():
     """Lấy singleton instance của RouteService"""
@@ -23,6 +25,16 @@ def get_semantic_service():
         _route_service_instance = RouteService()
     return _route_service_instance
 
+def get_cache_service():
+    """Lấy singleton instance của CacheSearch"""
+    global _cache_service
+    if _cache_service is None:
+        # fallback: lấy redis từ config (nếu có)
+        from services.cache_search import CacheSearch
+        from config.db import get_redis_client
+        redis = get_redis_client()
+        _cache_service = CacheSearch(redis)  
+    return _cache_service
 
 @router.post("/search")
 async def semantic_search(request: SemanticSearchRequest):
@@ -151,7 +163,7 @@ async def route_search(request: RouteSearchRequest):
     try:
         # 1. Xử lý delete_cache nếu được yêu cầu - xoá cache và build lại từ đầu
         if request.delete_cache and request.user_id:
-            deleted = await get_semantic_service().cache_service.delete_user_cache(request.user_id)
+            deleted = await get_cache_service().delete_user_cache(request.user_id)
             print(f"🗑️ Cache deleted for user {request.user_id}: {deleted}")
             # Continue to build routes từ đầu
 
