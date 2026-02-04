@@ -380,8 +380,12 @@ class RouteSearch(SpatialSearch):
                     speed = RouteConfig.TRANSPORTATION_SPEEDS.get(transportation_mode.upper(), 40)
                     travel_time_minutes = round((distance_km / speed) * 60, 1)
                 
-                # Stay time
-                stay_time_minutes = RouteConfig.DEFAULT_STAY_TIME
+                # Stay time: ưu tiên từ DB (cache), không có thì dùng default
+                stay_time_minutes = poi.get('stay_time')
+                if stay_time_minutes is None:
+                    stay_time_minutes = RouteConfig.DEFAULT_STAY_TIME
+                else:
+                    stay_time_minutes = float(stay_time_minutes)
                 
                 # Tính distance changes so với POI cũ
                 distance_changes = self.poi_update_service.calculate_distance_changes(
