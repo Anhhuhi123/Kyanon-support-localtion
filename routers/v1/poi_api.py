@@ -150,12 +150,12 @@ async def new_sync_pois(payload: PoiRequest) -> dict:
         # clean trong bảng poi_clean
         result_clean = await poi_service.clean_poi_clean_table(final_add_ids)
         # service llm generate description
-        result_llm_gen = await poi_service.generate_description(final_add_ids)
+        result_llm_gen = await poi_service.new_generate_description(final_add_ids)
         # normalize lại total_reviews sau khi thêm mới và cập nhật (normalize toàn bộ PoiClean)
         result_normalize = await poi_service.normalize_data()
         # Ingest toàn bộ PoiClean vào Qdrant
         result_qdrant = await ingest_qdrant_service.ingest_all_poi()
-        
+          
         return {
             "deleted": result_delete if delete_ids else None,
             "result_clean": result_clean,
@@ -163,6 +163,7 @@ async def new_sync_pois(payload: PoiRequest) -> dict:
             "result_normalize": result_normalize,
             "result_qdrant": result_qdrant
         }
+
     except HTTPException:
         raise
     except Exception as e:

@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from tqdm.asyncio import tqdm_asyncio
 from openai import AsyncOpenAI
 from utils.data_processing import process_poi_for_description, process_ingest_to_poi_clean, get_default_opening_hours
+from utils.new_data_processing import new_process_poi_for_description
 from utils.llm import process_batch
 load_dotenv()
 
@@ -241,9 +242,6 @@ class PoiService:
             data.get("total_reviews"), # $10: total_reviews
             opening_hours_json         # $11: open_hours
         )
-
-
-
 
     async def generate_description(self, poi_ids: List[UUID]):
         """
@@ -645,4 +643,98 @@ class PoiService:
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+    
+
+# ====================================LẤY DATA TRỰC TIẾP TỪ POICLEAN ĐỂ LLM GENERATION====================================== #
+    async def new_generate_description(self, poi_ids: List[UUID]):
+        if not self.db_pool:
+            raise HTTPException(status_code=500, detail="Database pool not initialized")
+
+        if not poi_ids:
+            return {
+                "success_count": 0,
+                "failed_count": 0,
+                "failed_ids": [],
+                "message": "No POI IDs provided"
+            }
+
+        failed_ids = []
+        failed_count = 0
+
+        # ===============================
+        # FETCH POI DATA
+        # ===============================
+        async with self.db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                'SELECT id, poi_type, metadata FROM "PoiClean" WHERE "id" = ANY($1::uuid[])',
+                poi_ids
+            )
+
+        if not rows:
+            return {
+                "success_count": 0,
+                "failed_count": len(poi_ids),
+                "failed_ids": [str(pid) for pid in poi_ids],
+                "message": "No POI found"
+            }
+
+        pois = []
+        for row in rows:
+            try:
+                poi_data = dict(row)
+                processed = new_process_poi_for_description(poi_data)
+                pois.append(processed)
+            except Exception as e:
+                failed_count += 1
+                failed_ids.append(str(row["id"]))
+                print(f"Process POI error {row['id']}: {e}")
+                
+        # Dùng LLM để generate description
+        # ===============================
+        # LOAD BASE PROMPT
+        # ===============================
+        prompt_path = os.path.join(os.getcwd(), "scripts/generate_description/final_prompt_stay_time_default.txt")
+        with open(prompt_path, "r", encoding="utf-8") as f:
+            base_prompt = f.read()
+                
+        poi_map = {poi["id"]: poi for poi in pois}
+        poi_id_list = list(poi_map.keys())
+
+        # ===============================
+        # BATCHING
+        # ===============================
+        batches = [
+            poi_id_list[i:i + BATCH_SIZE]
+            for i in range(0, len(poi_id_list), BATCH_SIZE)
+        ]
+
+        tasks = [
+            process_batch(
+                batch_ids=batch,
+                index=i,
+                poi_map=poi_map,
+                base_prompt=base_prompt,
+                client=self.openai_client
+            )
+            for i, batch in enumerate(batches)
+        ]
+
+        results = []
+        batch_results = await tqdm_asyncio.gather(*tasks)
+
+        for batch in batch_results:
+            results.extend(batch)
+
+        # ===============================
+        # UPDATE PoiClean TABLE
+        # ===============================
+        update_result = await self._update_poi_clean_from_llm(results)
+
+        return {
+            "success_count": update_result["updated_count"],
+            "failed_count": failed_count + update_result["error_count"],
+            "failed_ids": failed_ids + update_result["error_ids"],
+            "data": results
+        }
+
 
