@@ -4,8 +4,8 @@ from uuid import UUID
 from typing import Optional
 
 class PoiRequest(BaseModel):
-    add: List[UUID] = Field(default_factory=list)
-    delete: List[UUID] = Field(default_factory=list)
+    sync_ids: List[UUID] = Field(default_factory=list)
+    delete_ids: List[UUID] = Field(default_factory=list)
 
 class ConfirmReplaceRequest(BaseModel):
     user_id: UUID = Field(

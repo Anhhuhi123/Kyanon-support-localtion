@@ -1,25 +1,32 @@
 import uuid
 import time
 import numpy as np
+import asyncpg
 from config.config import Config
 from qdrant_client import AsyncQdrantClient
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Dict, Any
 from qdrant_client.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, HasIdCondition
 
 class QdrantVectorStore:
     """Qdrant-based vector store for similarity search (Async)"""
     
-    def __init__(self, client: Optional[AsyncQdrantClient] = None):
+    def __init__(self, client: Optional[AsyncQdrantClient] = None, db_pool: Optional[asyncpg.Pool] = None, embedder=None):
         """Initialize Qdrant vector store with async client
         
         Args:
             client: AsyncQdrantClient instance (required for async operations)
+            db_pool: AsyncPG connection pool (for ingest operations)
+            embedder: EmbeddingGenerator instance (for ingest operations)
         """
         self.dimension = Config.VECTOR_DIMENSION
         self.collection_name = Config.QDRANT_COLLECTION_NAME
+        self.collection_name_test = Config.QDRANT_COLLECTION_NAME_TEST
         self.client = client  # Expect AsyncQdrantClient injected
         self.collection_points_count = 0
         self.texts = []
+        self.db_pool = db_pool
+        self.embedder = embedder
+        self.batch_size = 100
         
     async def initialize_async(self):
         """Initialize collection and check if it exists (async)"""
@@ -351,3 +358,225 @@ class QdrantVectorStore:
         except Exception as e:
             print(f"Error deleting collection: {e}")
             raise
+    
+    # ====================================INGEST POI TO QDRANT====================================== #
+    
+    async def fetch_all_poi_data(self) -> List[tuple]:
+        """
+        Lấy toàn bộ id và poi_type_clean từ PoiClean
+        
+        Returns:
+            List[Tuple]: [(id, poi_type_clean), ...]
+        """
+        if not self.db_pool:
+            raise Exception("Database pool not initialized")
+        
+        try:
+            async with self.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    '''SELECT id, poi_type_clean 
+                       FROM "PoiClean" 
+                       WHERE poi_type_clean IS NOT NULL 
+                         AND poi_type_clean != ''
+                         AND "deletedAt" IS NULL
+                       ORDER BY id'''
+                )
+                
+                result = [(str(row["id"]), row["poi_type_clean"]) for row in rows]
+                print(f"✓ Đã lấy {len(result)} địa điểm từ database")
+                return result
+                
+        except Exception as e:
+            raise Exception(f"Failed to fetch POI data: {str(e)}")
+    
+    async def _reset_collection(self, dimension: int, collection_name: str = None):
+        """
+        Xóa và tạo lại collection trong Qdrant
+        
+        Args:
+            dimension: Số chiều của vector embeddings
+            collection_name: Tên collection (default: self.collection_name_test)
+        """
+        target_collection = collection_name or self.collection_name_test
+        print(f"🔄 Reset collection '{target_collection}'...")
+        
+        # Xóa collection cũ nếu tồn tại
+        try:
+            await self.client.delete_collection(collection_name=target_collection)
+            print(f"  ✓ Đã xóa collection cũ")
+        except Exception as e:
+            print(f"  ℹ️  Collection chưa tồn tại: {e}")
+        
+        # Tạo collection mới
+        await self.client.create_collection(
+            collection_name=target_collection,
+            vectors_config=VectorParams(
+                size=dimension,
+                distance=Distance.COSINE
+            )
+        )
+        print(f"  ✓ Đã tạo collection mới với dimension {dimension}")
+    
+    async def _ingest_to_qdrant(self, poi_data: List[tuple], collection_name: str = None) -> Dict[str, Any]:
+        """
+        Ingest POI data vào Qdrant
+        
+        Args:
+            poi_data: List[(id, poi_type_clean)]
+            collection_name: Tên collection (default: self.collection_name_test)
+            
+        Returns:
+            Dict chứa kết quả ingest
+        """
+        if not poi_data:
+            return {
+                "status": "success",
+                "upserted_count": 0,
+                "message": "No data to ingest"
+            }
+        
+        if not self.embedder:
+            raise Exception("Embedder not initialized")
+        
+        target_collection = collection_name or self.collection_name_test
+        
+        try:
+            # Tạo embeddings cho tất cả poi_type
+            print(f"🔄 Tạo embeddings cho {len(poi_data)} poi_type...")
+            poi_types = [poi[1] for poi in poi_data]
+            embeddings = self.embedder.generate_embeddings(poi_types)
+            print(f"  ✓ Đã tạo {len(embeddings)} embeddings")
+            
+            # Reset collection
+            embedding_dim = self.embedder.model.get_sentence_embedding_dimension()
+            await self._reset_collection(embedding_dim, target_collection)
+            
+            # Chuẩn bị points
+            print("🔄 Chuẩn bị points...")
+            points = []
+            for idx, (location_id, poi_type) in enumerate(poi_data):
+                point = PointStruct(
+                    id=location_id,  # UUID string
+                    vector=embeddings[idx].tolist(),
+                    payload={
+                        "poi_type_clean": poi_type
+                    }
+                )
+                points.append(point)
+            
+            # Upsert theo batch
+            print(f"🚀 Upsert {len(points)} points vào Qdrant (batch size: {self.batch_size})...")
+            total_batches = (len(points) + self.batch_size - 1) // self.batch_size
+            upserted_count = 0
+            
+            for i in range(0, len(points), self.batch_size):
+                batch = points[i:i + self.batch_size]
+                await self.client.upsert(
+                    collection_name=target_collection,
+                    points=batch
+                )
+                upserted_count += len(batch)
+                batch_num = i // self.batch_size + 1
+                print(f"  ✓ Batch {batch_num}/{total_batches}: upserted {len(batch)} points")
+            
+            print(f"✅ Hoàn thành upsert!")
+            
+            return {
+                "status": "success",
+                "upserted_count": upserted_count,
+                "collection_name": target_collection,
+                "embedding_dimension": embedding_dim,
+                "message": f"Successfully ingested {upserted_count} points to Qdrant"
+            }
+            
+        except Exception as e:
+            raise Exception(f"Failed to ingest to Qdrant: {str(e)}")
+    
+    async def _verify_collection(self, collection_name: str = None) -> Dict[str, Any]:
+        """
+        Verify collection sau khi ingest
+        
+        Args:
+            collection_name: Tên collection (default: self.collection_name_test)
+            
+        Returns:
+            Dict chứa thông tin collection
+        """
+        target_collection = collection_name or self.collection_name_test
+        print(f"\n🔍 Verify collection '{target_collection}'...")
+        
+        try:
+            # Lấy thông tin collection
+            collection_info = await self.client.get_collection(collection_name=target_collection)
+            
+            result = {
+                "collection_name": target_collection,
+                "points_count": collection_info.points_count,
+                "vector_dimension": collection_info.config.params.vectors.size,
+                "distance_metric": str(collection_info.config.params.vectors.distance)
+            }
+            
+            print(f"  ✓ Tổng số points: {result['points_count']}")
+            print(f"  ✓ Vector dimension: {result['vector_dimension']}")
+            print(f"  ✓ Distance metric: {result['distance_metric']}")
+            
+            return result
+            
+        except Exception as e:
+            print(f"  ❌ Verify failed: {e}")
+            return {"error": str(e)}
+    
+    async def ingest_all_poi(self, collection_name: str = None) -> Dict[str, Any]:
+        """
+        Ingest toàn bộ POI data từ PoiClean vào Qdrant
+        
+        Quy trình:
+        1. Lấy toàn bộ data từ PoiClean
+        2. Tạo embeddings từ poi_type_clean
+        3. Reset collection (xóa và tạo lại)
+        4. Upsert toàn bộ points
+        5. Verify collection
+        
+        Args:
+            collection_name: Tên collection (default: self.collection_name_test)
+            
+        Returns:
+            Dict chứa kết quả ingest
+        """
+        target_collection = collection_name or self.collection_name_test
+        
+        try:
+            print("="*60)
+            print("🚀 BẮT ĐẦU INGEST POI DATA VÀO QDRANT")
+            print("="*60)
+            
+            # 1. Lấy toàn bộ data từ database
+            print("\n1️⃣  Fetch data từ database...")
+            poi_data = await self.fetch_all_poi_data()
+            
+            if not poi_data:
+                return {
+                    "status": "success",
+                    "upserted_count": 0,
+                    "message": "No POI data found in database"
+                }
+            
+            # 2. Ingest vào Qdrant (bao gồm tạo embeddings, reset collection, upsert)
+            print("\n2️⃣  Ingest data vào Qdrant...")
+            ingest_result = await self._ingest_to_qdrant(poi_data, target_collection)
+            
+            # 3. Verify collection
+            print("\n3️⃣  Verify collection...")
+            verify_result = await self._verify_collection(target_collection)
+            
+            print("\n" + "="*60)
+            print("✅ HOÀN THÀNH INGEST DATA VÀO QDRANT!")
+            print("="*60)
+            
+            return {
+                **ingest_result,
+                "verify": verify_result
+            }
+            
+        except Exception as e:
+            raise Exception(f"Failed to ingest all POI: {str(e)}")

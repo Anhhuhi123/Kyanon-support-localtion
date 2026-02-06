@@ -8,7 +8,7 @@ import asyncpg
 import redis.asyncio as aioredis
 from retrieval.embeddings import EmbeddingGenerator
 from retrieval.qdrant_vector_store import QdrantVectorStore
-from radius_logic.information_location import LocationInfoService
+from radius_logic.information_poi import LocationInfoService
 from qdrant_client.models import Filter, FieldCondition, MatchAny
 
 

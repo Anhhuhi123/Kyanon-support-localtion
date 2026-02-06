@@ -11,7 +11,7 @@ import redis.asyncio as aioredis
 from services.spatial_search import SpatialSearch
 from services.cache_search import CacheSearch
 from radius_logic.route import RouteBuilder
-from radius_logic.update_poi import POIUpdateService
+from radius_logic.replace_poi import POIUpdateService
 from uuid import UUID
 
 class RouteSearch(SpatialSearch):
@@ -38,10 +38,10 @@ class RouteSearch(SpatialSearch):
             embedder: Shared EmbeddingGenerator instance
         """
         super().__init__(db_pool, redis_client, vector_store, embedder)
-        self.process_pool = process_pool
-        self.route_builder = RouteBuilder()
-        self.cache_service = CacheSearch(redis_client)
-        self.poi_update_service = POIUpdateService()
+        self.process_pool: Optional[ProcessPoolExecutor] = process_pool
+        self.route_builder: RouteBuilder = RouteBuilder()
+        self.cache_service: CacheSearch = CacheSearch(redis_client)
+        self.poi_update_service: POIUpdateService = POIUpdateService()
     
     async def build_routes(
         self,
@@ -141,7 +141,6 @@ class RouteSearch(SpatialSearch):
                 duration_mode=duration_mode,
                 current_datetime=current_datetime,  # Pass datetime để validate opening hours
                 executor=self.process_pool  # Use process pool for CPU-bound task
-                
             )
             
             route_time = time.time() - route_start
@@ -464,7 +463,7 @@ class RouteSearch(SpatialSearch):
             
         except Exception as e:
             import traceback
-            print(f"❌ Error in update_poi_in_route: {str(e)}")
+            print(f"❌ Error in replace_poi_in_route: {str(e)}")
             print(traceback.format_exc())
             return {
                 "status": "error",

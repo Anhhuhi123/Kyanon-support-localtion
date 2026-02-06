@@ -12,6 +12,7 @@ from openai import AsyncOpenAI
 from utils.data_processing import process_poi_for_description, process_ingest_to_poi_clean, get_default_opening_hours
 from utils.new_data_processing import new_process_poi_for_description
 from utils.llm import process_batch
+from radius_logic.information_poi import LocationInfoService
 load_dotenv()
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -29,6 +30,8 @@ class PoiService:
         self.db_pool = db_pool
         self.redis_client = redis_client
         self.openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+        # Inject LocationInfoService
+        self.location_repo = LocationInfoService(db_pool=db_pool, redis_client=redis_client)
     
     async def get_visited_pois_by_user(self, user_id: UUID) -> List[UUID]:
         """
@@ -40,34 +43,8 @@ class PoiService:
         Returns:
             List UUID của các POI đã visit
         """
-        if not self.db_pool:
-            raise HTTPException(status_code=500, detail="Database pool not initialized")
-        
         try:
-            async with self.db_pool.acquire() as conn:
-                # 1. Lấy itinerary id
-                itinerary = await conn.fetchrow(
-                    'SELECT id FROM "UserItinerary" WHERE "userId" = $1',
-                    user_id
-                )
-                
-                if not itinerary:
-                    # raise HTTPException(status_code=404, detail="Itinerary not found")
-                    return []
-
-                itinerary_id = itinerary["id"]
-
-                # 2. Lấy danh sách POI đã visit
-                rows = await conn.fetch(
-                    'SELECT poi_id FROM "UserItineraryPoi" WHERE "user_itinerary_id" = $1',
-                    itinerary_id
-                )
-                
-                poi_ids = [row["poi_id"] for row in rows]
-                return poi_ids
-                
-        except HTTPException:
-            raise
+            return await self.location_repo.get_visited_pois_by_user(user_id)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -84,19 +61,8 @@ class PoiService:
         if not poi_ids:
             return []
         
-        if not self.db_pool:
-            raise HTTPException(status_code=500, detail="Database pool not initialized")
-        
         try:
-            async with self.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    'SELECT * FROM "PoiClean" WHERE "id" = ANY($1::uuid[])',
-                    poi_ids
-                )
-                
-                # Convert asyncpg.Record to dict
-                return [dict(row) for row in rows]
-
+            return await self.location_repo.get_poi_by_ids(poi_ids)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -118,9 +84,6 @@ class PoiService:
             Dict chứa kết quả: success_count, failed_count, failed_ids
         """
         
-        if not self.db_pool:
-            raise HTTPException(status_code=500, detail="Database pool not initialized")
-        
         if not poi_ids:
             return {
                 "success_count": 0,
@@ -134,114 +97,50 @@ class PoiService:
         failed_ids = []
         
         try:
-            async with self.db_pool.acquire() as conn:
-                # Step 1: Lấy data từ bảng Poi
-                rows = await conn.fetch(
-                    'SELECT id, content, raw_data, metadata FROM "Poi" WHERE "id" = ANY($1::uuid[])',
-                    poi_ids
-                )
-                
-                if not rows:
-                    return {
-                        "success_count": 0,
-                        "failed_count": len(poi_ids),
-                        "failed_ids": [str(pid) for pid in poi_ids],
-                        "message": "No POI found with provided IDs"
-                    }
-                
-                # Step 2 & 3: Process each POI (Extract -> Clean -> Normalize)
-                for row in rows:
-                    try:
-                        poi_data = dict(row)
-                        
-                        #  add vô thôi chớ chưa có clean gì hết
-                        processed_data = process_ingest_to_poi_clean(
-                            poi_row=poi_data,
-                        ) 
-                        # Validate required fields
-                        if not processed_data.get("lat") or not processed_data.get("lon"):
-                            failed_count += 1
-                            failed_ids.append(str(poi_data.get("id")))
-                            continue
-                        
-                        # Step 4: Insert/Update vào bảng PoiClean
-                        await self._upsert_poi_clean(conn, processed_data)
-                        success_count += 1
-                        
-                    except Exception as e:
-                        failed_count += 1
-                        failed_ids.append(str(row.get("id")))
-                        print(f"Error processing POI {row.get('id')}: {e}")
-                
+            # Step 1: Lấy data từ bảng Poi
+            rows = await self.location_repo.get_poi_from_source_table(poi_ids)
+            
+            if not rows:
                 return {
-                    "success_count": success_count,
-                    "failed_count": failed_count,
-                    "failed_ids": failed_ids,
-                    "message": f"Processed {success_count} POIs successfully, {failed_count} failed"
+                    "success_count": 0,
+                    "failed_count": len(poi_ids),
+                    "failed_ids": [str(pid) for pid in poi_ids],
+                    "message": "No POI found with provided IDs"
                 }
+            
+            # Step 2 & 3: Process each POI (Extract -> Clean -> Normalize)
+            for row in rows:
+                try:
+                    poi_data = dict(row)
+                    
+                    #  add vô thôi chớ chưa có clean gì hết
+                    processed_data = process_ingest_to_poi_clean(
+                        poi_row=poi_data,
+                    ) 
+                    # Validate required fields
+                    if not processed_data.get("lat") or not processed_data.get("lon"):
+                        failed_count += 1
+                        failed_ids.append(str(poi_data.get("id")))
+                        continue
+                    
+                    # Step 4: Insert/Update vào bảng PoiClean
+                    await self.location_repo.upsert_poi_clean(processed_data)
+                    success_count += 1
+                    
+                except Exception as e:
+                    failed_count += 1
+                    failed_ids.append(str(row.get("id")))
+                    print(f"Error processing POI {row.get('id')}: {e}")
+            
+            return {
+                "success_count": success_count,
+                "failed_count": failed_count,
+                "failed_ids": failed_ids,
+                "message": f"Processed {success_count} POIs successfully, {failed_count} failed"
+            }
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
-
-    async def _upsert_poi_clean(self, conn: asyncpg.Connection, data: Dict[str, Any]):
-        """
-        Insert or Update POI data vào bảng PoiClean
-        """
-
-        # Convert opening_hours to JSON string
-        opening_hours_json = json.dumps(data.get("opening_hours", []))
-
-        upsert_sql = """
-        INSERT INTO public."PoiClean" (
-            id,
-            name,
-            address,
-            lat,
-            lon,
-            geom,
-            poi_type,
-            avg_stars,
-            total_reviews,
-            open_hours,
-            created_at,
-            "updatedAt",
-            "deletedAt"
-        )
-        VALUES (
-            $1, $2, $3, $4, $5,
-            ST_SetSRID(ST_MakePoint($6, $7), 4326),
-            $8, $9, $10, $11,
-            NOW(),
-            NOW(),
-            NULL
-        )
-        ON CONFLICT (id) DO UPDATE SET
-            name = EXCLUDED.name,
-            address = EXCLUDED.address,
-            lat = EXCLUDED.lat,
-            lon = EXCLUDED.lon,
-            geom = EXCLUDED.geom,
-            poi_type = EXCLUDED.poi_type,
-            avg_stars = EXCLUDED.avg_stars,
-            total_reviews = EXCLUDED.total_reviews,
-            open_hours = EXCLUDED.open_hours,
-            "updatedAt" = NOW();
-        """
-
-        await conn.execute(
-            upsert_sql,
-            data.get("id"),            # $1: id
-            data.get("name"),          # $2: name
-            data.get("address"),       # $3: address
-            data.get("lat"),           # $4: lat
-            data.get("lon"),           # $5: lon
-            data.get("lon"),           # $6: x for ST_MakePoint
-            data.get("lat"),           # $7: y for ST_MakePoint
-            data.get("poi_type"),      # $8: poi_type
-            data.get("avg_stars"),     # $9: avg_stars
-            data.get("total_reviews"), # $10: total_reviews
-            opening_hours_json         # $11: open_hours
-        )
 
     async def generate_description(self, poi_ids: List[UUID]):
         """
@@ -259,9 +158,6 @@ class PoiService:
         Returns:
             Dict chứa kết quả: success_count, failed_count, failed_ids
         """
-        if not self.db_pool:
-            raise HTTPException(status_code=500, detail="Database pool not initialized")
-
         if not poi_ids:
             return {
                 "success_count": 0,
@@ -276,11 +172,7 @@ class PoiService:
         # ===============================
         # FETCH POI DATA
         # ===============================
-        async with self.db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                'SELECT id, content, raw_data, metadata FROM "Poi" WHERE "id" = ANY($1::uuid[])',
-                poi_ids
-            )
+        rows = await self.location_repo.get_poi_from_source_table(poi_ids)
 
         if not rows:
             return {
@@ -354,65 +246,36 @@ class PoiService:
         """
         Update PoiClean table từ kết quả LLM.
         """
-
-        if not self.db_pool:
-            raise HTTPException(status_code=500, detail="Database pool not initialized")
         
         updated_count = 0
         skipped_count = 0
         error_count = 0
         error_ids = []
         
-        async with self.db_pool.acquire() as conn:
-            for poi in llm_results:
-                # Skip None results (từ batch bị lỗi)
-                if poi is None:
-                    skipped_count += 1
-                    continue
+        for poi in llm_results:
+            # Skip None results (từ batch bị lỗi)
+            if poi is None:
+                skipped_count += 1
+                continue
+            
+            poi_id = poi.get('id')
+            if not poi_id:
+                skipped_count += 1
+                continue
+            
+            try:
+                await self.location_repo.update_poi_clean_from_llm(poi_id, poi)
+                updated_count += 1
                 
-                poi_id = poi.get('id')
-                if not poi_id:
-                    skipped_count += 1
-                    continue
-                
-                poi_type_clean = poi.get('poi_type_new')
-                main_subcategory = poi.get('main_subcategory')
-                specialization = poi.get('specialization')
-                suitability = poi.get('suitability')
-                stay_time = poi.get('stay_time')   
-
-                # Convert suitability dict to JSON string
-                suitability_json = json.dumps(suitability) if suitability else None
-                
-                try:
-                    await conn.execute(
-                        '''UPDATE "PoiClean"
-                        SET poi_type_clean = $1,
-                            main_subcategory = $2,
-                            specialization = $3,
-                            travel_type = $4,
-                            stay_time = $5,              
-                            "updatedAt" = NOW()
-                        WHERE id = $6''',
-                        poi_type_clean,
-                        main_subcategory,
-                        specialization,
-                        suitability_json,
-                        stay_time,                       
-                        poi_id
-                    )
-
-                    updated_count += 1
-                    
-                    # Print progress every 100 records
-                    if (updated_count + skipped_count) % 100 == 0:
-                        print(f"Processed: {updated_count + skipped_count} records "
-                            f"(Updated: {updated_count}, Skipped: {skipped_count})")
-                
-                except Exception as e:
-                    error_count += 1
-                    error_ids.append(str(poi_id))
-                    print(f"Error updating POI {poi_id}: {e}")
+                # Print progress every 100 records
+                if (updated_count + skipped_count) % 100 == 0:
+                    print(f"Processed: {updated_count + skipped_count} records "
+                        f"(Updated: {updated_count}, Skipped: {skipped_count})")
+            
+            except Exception as e:
+                error_count += 1
+                error_ids.append(str(poi_id))
+                print(f"Error updating POI {poi_id}: {e}")
         
         print(f"\n✓ Update complete!")
         print(f"Total Updated: {updated_count}")
@@ -432,9 +295,6 @@ class PoiService:
         """
         Xóa hẳn POI khỏi bảng PoiClean theo danh sách IDs.
         """
-        if not self.db_pool:
-            raise HTTPException(status_code=500, detail="Database pool not initialized")
-
         if not poi_ids:
             return {
                 "deleted_count": 0,
@@ -443,30 +303,12 @@ class PoiService:
             }
 
         try:
-            async with self.db_pool.acquire() as conn:
-                # Lấy các id tồn tại
-                existing_rows = await conn.fetch(
-                    'SELECT id FROM "PoiClean" WHERE "id" = ANY($1::uuid[])',
-                    poi_ids,
-                )
-                existing_ids = [row["id"] for row in existing_rows]
-                not_found_ids = [str(pid) for pid in poi_ids if pid not in existing_ids]
-
-                deleted_count = 0
-                if existing_ids:
-                    # Hard delete
-                    result = await conn.execute(
-                        'DELETE FROM "PoiClean" WHERE "id" = ANY($1::uuid[])',
-                        existing_ids,
-                    )
-                    # asyncpg trả về dạng "DELETE <n>"
-                    deleted_count = int(result.split()[-1]) if result else len(existing_ids)
-
-                return {
-                    "deleted_count": deleted_count,
-                    "not_found_ids": not_found_ids,
-                    "message": f"Deleted {deleted_count} POIs, {len(not_found_ids)} not found",
-                }
+            result = await self.location_repo.delete_pois(poi_ids)
+            return {
+                "deleted_count": result["deleted_count"],
+                "not_found_ids": result["not_found_ids"],
+                "message": f"Deleted {result['deleted_count']} POIs, {len(result['not_found_ids'])} not found",
+            }
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -475,60 +317,16 @@ class PoiService:
         """
         Normalize normalize_stars_reviews cho toàn bộ POI bằng SQL (1 UPDATE duy nhất)
         """
-
-        if not self.db_pool:
-            raise HTTPException(status_code=500, detail="Database pool not initialized")
-
-        sql = """
-        WITH stats AS (
-            SELECT
-                MIN(avg_stars) AS min_avg_stars,
-                MAX(avg_stars) AS max_avg_stars,
-                MAX(total_reviews) AS max_total_reviews
-            FROM "PoiClean"
-            WHERE "deletedAt" IS NULL
-        )
-        UPDATE "PoiClean" p
-        SET
-            normalize_stars_reviews = ROUND(
-                (
-                    (
-                        CASE
-                            WHEN s.max_avg_stars != s.min_avg_stars
-                            THEN
-                                (COALESCE(p.avg_stars, s.min_avg_stars) - s.min_avg_stars)
-                                / (s.max_avg_stars - s.min_avg_stars)
-                            ELSE
-                                0.5
-                        END
-                    ) * 0.6
-                    +
-                    (
-                        CASE
-                            WHEN s.max_total_reviews > 0
-                            THEN
-                                LN(COALESCE(p.total_reviews, 1) + 1)
-                                / LN(s.max_total_reviews + 1)
-                            ELSE
-                                0
-                        END
-                    ) * 0.4
-                )::numeric
-            , 3),
-            "updatedAt" = NOW()
-        FROM stats s
-        WHERE p."deletedAt" IS NULL;
-        """
-
         try:
-            async with self.db_pool.acquire() as conn:
-                result = await conn.execute(sql)
-
-            return {
-                "status": "success",
-                "message": "Normalize completed successfully",
-                "db_result": result
-            }
+            success = await self.location_repo.normalize_data()
+            
+            if success:
+                return {
+                    "status": "success",
+                    "message": "Normalize completed successfully"
+                }
+            else:
+                raise HTTPException(status_code=500, detail="Failed to normalize data")
 
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
@@ -551,10 +349,6 @@ class PoiService:
             Dict chứa kết quả: success_count, failed_count, failed_ids
         """
 
-        
-        if not self.db_pool:
-            raise HTTPException(status_code=500, detail="Database pool not initialized")
-
         if not poi_ids:
             return {
                 "success_count": 0,
@@ -568,12 +362,13 @@ class PoiService:
         failed_ids = []
         
         try:
+            if not self.db_pool:
+                raise HTTPException(status_code=500, detail="Database pool not initialized")
+                
+            # Lấy giá trị MIN của avg_stars từ PoiClean
+            min_avg_stars = await self.location_repo.get_min_avg_stars()
+            
             async with self.db_pool.acquire() as conn:
-                # Lấy giá trị MIN của avg_stars từ PoiClean (chỉ lấy các giá trị không null)
-                min_row = await conn.fetchrow(
-                    'SELECT MIN(avg_stars) AS min_avg_stars FROM "PoiClean" WHERE avg_stars IS NOT NULL AND "deletedAt" IS NULL'
-                )
-                min_avg_stars = min_row["min_avg_stars"] if min_row and min_row["min_avg_stars"] else 1.0
                 # Lấy data từ bảng PoiClean
                 rows = await conn.fetch(
                     'SELECT id, avg_stars, total_reviews, open_hours FROM "PoiClean" WHERE "id" = ANY($1::uuid[]) AND "deletedAt" IS NULL',
@@ -647,9 +442,6 @@ class PoiService:
 
 # ====================================LẤY DATA TRỰC TIẾP TỪ POICLEAN ĐỂ LLM GENERATION====================================== #
     async def new_generate_description(self, poi_ids: List[UUID]):
-        if not self.db_pool:
-            raise HTTPException(status_code=500, detail="Database pool not initialized")
-
         if not poi_ids:
             return {
                 "success_count": 0,
@@ -664,11 +456,7 @@ class PoiService:
         # ===============================
         # FETCH POI DATA
         # ===============================
-        async with self.db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                'SELECT id, poi_type, metadata FROM "PoiClean" WHERE "id" = ANY($1::uuid[])',
-                poi_ids
-            )
+        rows = await self.location_repo.get_poi_by_ids(poi_ids)
 
         if not rows:
             return {

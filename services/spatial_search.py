@@ -8,7 +8,7 @@ from typing import Optional, List, Dict, Any
 import asyncpg
 import redis.asyncio as aioredis
 from services.qdrant_search import QdrantSearch
-from services.location_service import LocationService
+from services.location_search import LocationSearch
 from services.poi_service import PoiService
 from utils.time_utils import TimeUtils
 from uuid import UUID
@@ -62,8 +62,8 @@ class SpatialSearch(QdrantSearch):
             
             # 1. Tìm kiếm spatial (ASYNC)
             print(f"\n🔍 Step 1: Spatial search...")
-            location_service = LocationService(db_pool=self.db_pool, redis_client=self.redis_client)
-            spatial_results = await location_service.find_nearest_locations(
+            location_search = LocationSearch(db_pool=self.db_pool, redis_client=self.redis_client)
+            spatial_results = await location_search.find_nearest_locations(
                 latitude=latitude,
                 longitude=longitude,
                 transportation_mode=transportation_mode
@@ -218,8 +218,8 @@ class SpatialSearch(QdrantSearch):
             
             # 1. Spatial search (chỉ 1 lần) với tùy chọn lọc theo thời gian (ASYNC)
             print(f"\n🔍 Step 1: Spatial search...")
-            location_service = LocationService(db_pool=self.db_pool, redis_client=self.redis_client)
-            spatial_results = await location_service.find_nearest_locations(
+            location_search = LocationSearch(db_pool=self.db_pool, redis_client=self.redis_client)
+            spatial_results = await location_search.find_nearest_locations(
                 latitude=latitude,
                 longitude=longitude,
                 transportation_mode=transportation_mode,

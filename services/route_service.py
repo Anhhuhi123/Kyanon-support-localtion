@@ -125,6 +125,32 @@ class RouteService:
             customer_like, current_datetime, duration_mode
         )
     
+    async def replace_route(
+        self,
+        user_id: UUID,
+        route_id_to_replace: int,
+        latitude: float,
+        longitude: float,
+        transportation_mode: str,
+        semantic_query: str,
+        max_time_minutes: int = 180,
+        target_places: int = 5,
+        top_k_semantic: int = 10,
+        customer_like: bool = False,
+        current_datetime: Optional[datetime] = None,
+        duration_mode: bool = False
+    ) -> Dict[str, Any]:
+        """
+        Delegate to RouteSearch.replace_route
+        Replace route: Xây dựng route mới, xoá route cũ
+        """
+        return await self.route_service.replace_route(
+            user_id, route_id_to_replace, latitude, longitude,
+            transportation_mode, semantic_query, max_time_minutes,
+            target_places, top_k_semantic, customer_like,
+            current_datetime, duration_mode
+        )
+    
     async def replace_poi(
         self,
         user_id: UUID,
@@ -155,28 +181,3 @@ class RouteService:
             user_id, route_id, old_poi_id, new_poi_id
         )
     
-    async def replace_route(
-        self,
-        user_id: UUID,
-        route_id_to_replace: int,
-        latitude: float,
-        longitude: float,
-        transportation_mode: str,
-        semantic_query: str,
-        max_time_minutes: int = 180,
-        target_places: int = 5,
-        top_k_semantic: int = 10,
-        customer_like: bool = False,
-        current_datetime: Optional[datetime] = None,
-        duration_mode: bool = False
-    ) -> Dict[str, Any]:
-        """
-        Delegate to RouteSearch.replace_route
-        Replace route: Xây dựng route mới, xoá route cũ
-        """
-        return await self.route_service.replace_route(
-            user_id, route_id_to_replace, latitude, longitude,
-            transportation_mode, semantic_query, max_time_minutes,
-            target_places, top_k_semantic, customer_like,
-            current_datetime, duration_mode
-        )

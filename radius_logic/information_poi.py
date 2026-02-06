@@ -8,6 +8,7 @@ import redis.asyncio as aioredis
 import json
 import uuid
 from typing import List, Dict, Any, Optional
+from uuid import UUID
 from config.config import Config
 from utils.time_utils import TimeUtils
 from .route.route_config import RouteConfig
@@ -283,3 +284,324 @@ class LocationInfoService:
             print(f"Error getting locations batch: {e}")
             # Fallback: return cached results nếu có lỗi DB
             return cached_results
+    
+    async def get_visited_pois_by_user(self, user_id: UUID) -> List[UUID]:
+        """
+        Lấy danh sách POI đã visit của user
+        
+        Args:
+            user_id: UUID của user
+            
+        Returns:
+            List UUID của các POI đã visit
+        """
+        if not self.db_pool:
+            return []
+        
+        try:
+            async with self.db_pool.acquire() as conn:
+                # 1. Lấy itinerary id
+                itinerary = await conn.fetchrow(
+                    'SELECT id FROM "UserItinerary" WHERE "userId" = $1',
+                    user_id
+                )
+                
+                if not itinerary:
+                    return []
+
+                itinerary_id = itinerary["id"]
+
+                # 2. Lấy danh sách POI đã visit
+                rows = await conn.fetch(
+                    'SELECT poi_id FROM "UserItineraryPoi" WHERE "user_itinerary_id" = $1',
+                    itinerary_id
+                )
+                
+                poi_ids = [row["poi_id"] for row in rows]
+                return poi_ids
+                
+        except Exception as e:
+            print(f"Error getting visited POIs for user {user_id}: {e}")
+            return []
+    
+    async def get_poi_by_ids(self, poi_ids: List[UUID]) -> List[dict]:
+        """
+        Lấy thông tin POI theo danh sách IDs
+        
+        Args:
+            poi_ids: List UUID của các POI
+            
+        Returns:
+            List dict chứa thông tin POI
+        """
+        if not poi_ids or not self.db_pool:
+            return []
+        
+        try:
+            async with self.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    'SELECT * FROM "PoiClean" WHERE "id" = ANY($1::uuid[])',
+                    poi_ids
+                )
+                
+                return [dict(row) for row in rows]
+
+        except Exception as e:
+            print(f"Error getting POI by IDs: {e}")
+            return []
+    
+    async def upsert_poi_clean(self, data: Dict[str, Any]):
+        """
+        Insert or Update POI data vào bảng PoiClean
+        
+        Args:
+            data: Dict chứa thông tin POI cần insert/update
+        """
+        if not self.db_pool:
+            raise Exception("Database pool not initialized")
+
+        # Convert opening_hours to JSON string
+        opening_hours_json = json.dumps(data.get("opening_hours", []))
+
+        upsert_sql = """
+        INSERT INTO public."PoiClean" (
+            id,
+            name,
+            address,
+            lat,
+            lon,
+            geom,
+            poi_type,
+            avg_stars,
+            total_reviews,
+            open_hours,
+            created_at,
+            "updatedAt",
+            "deletedAt"
+        )
+        VALUES (
+            $1, $2, $3, $4, $5,
+            ST_SetSRID(ST_MakePoint($6, $7), 4326),
+            $8, $9, $10, $11,
+            NOW(),
+            NOW(),
+            NULL
+        )
+        ON CONFLICT (id) DO UPDATE SET
+            name = EXCLUDED.name,
+            address = EXCLUDED.address,
+            lat = EXCLUDED.lat,
+            lon = EXCLUDED.lon,
+            geom = EXCLUDED.geom,
+            poi_type = EXCLUDED.poi_type,
+            avg_stars = EXCLUDED.avg_stars,
+            total_reviews = EXCLUDED.total_reviews,
+            open_hours = EXCLUDED.open_hours,
+            "updatedAt" = NOW();
+        """
+
+        async with self.db_pool.acquire() as conn:
+            await conn.execute(
+                upsert_sql,
+                data.get("id"),
+                data.get("name"),
+                data.get("address"),
+                data.get("lat"),
+                data.get("lon"),
+                data.get("lon"),
+                data.get("lat"),
+                data.get("poi_type"),
+                data.get("avg_stars"),
+                data.get("total_reviews"),
+                opening_hours_json
+            )
+    
+    async def update_poi_clean_from_llm(self, poi_id: UUID, poi_data: Dict[str, Any]):
+        """
+        Update PoiClean table từ kết quả LLM
+        
+        Args:
+            poi_id: UUID của POI
+            poi_data: Dict chứa data từ LLM
+        """
+        if not self.db_pool:
+            raise Exception("Database pool not initialized")
+        
+        poi_type_clean = poi_data.get('poi_type_new')
+        main_subcategory = poi_data.get('main_subcategory')
+        specialization = poi_data.get('specialization')
+        suitability = poi_data.get('suitability')
+        stay_time = poi_data.get('stay_time')
+
+        # Convert suitability dict to JSON string
+        suitability_json = json.dumps(suitability) if suitability else None
+        
+        async with self.db_pool.acquire() as conn:
+            await conn.execute(
+                '''UPDATE "PoiClean"
+                SET poi_type_clean = $1,
+                    main_subcategory = $2,
+                    specialization = $3,
+                    travel_type = $4,
+                    stay_time = $5,
+                    "updatedAt" = NOW()
+                WHERE id = $6''',
+                poi_type_clean,
+                main_subcategory,
+                specialization,
+                suitability_json,
+                stay_time,
+                poi_id
+            )
+    
+    async def delete_pois(self, poi_ids: List[UUID]) -> Dict[str, Any]:
+        """
+        Xóa POI khỏi bảng PoiClean theo danh sách IDs
+        
+        Args:
+            poi_ids: List UUID của các POI cần xóa
+            
+        Returns:
+            Dict chứa thông tin về số lượng deleted và not found
+        """
+        if not self.db_pool or not poi_ids:
+            return {
+                "deleted_count": 0,
+                "not_found_ids": []
+            }
+
+        try:
+            async with self.db_pool.acquire() as conn:
+                # Lấy các id tồn tại
+                existing_rows = await conn.fetch(
+                    'SELECT id FROM "PoiClean" WHERE "id" = ANY($1::uuid[])',
+                    poi_ids,
+                )
+                existing_ids = [row["id"] for row in existing_rows]
+                not_found_ids = [str(pid) for pid in poi_ids if pid not in existing_ids]
+
+                deleted_count = 0
+                if existing_ids:
+                    result = await conn.execute(
+                        'DELETE FROM "PoiClean" WHERE "id" = ANY($1::uuid[])',
+                        existing_ids,
+                    )
+                    deleted_count = int(result.split()[-1]) if result else len(existing_ids)
+
+                return {
+                    "deleted_count": deleted_count,
+                    "not_found_ids": not_found_ids
+                }
+
+        except Exception as e:
+            print(f"Error deleting POIs: {e}")
+            return {
+                "deleted_count": 0,
+                "not_found_ids": [str(pid) for pid in poi_ids]
+            }
+    
+    async def normalize_data(self) -> bool:
+        """
+        Normalize normalize_stars_reviews cho toàn bộ POI bằng SQL
+        
+        Returns:
+            True nếu thành công, False nếu có lỗi
+        """
+        if not self.db_pool:
+            return False
+
+        sql = """
+        WITH stats AS (
+            SELECT
+                MIN(avg_stars) AS min_avg_stars,
+                MAX(avg_stars) AS max_avg_stars,
+                MAX(total_reviews) AS max_total_reviews
+            FROM "PoiClean"
+            WHERE "deletedAt" IS NULL
+        )
+        UPDATE "PoiClean" p
+        SET
+            normalize_stars_reviews = ROUND(
+                (
+                    (
+                        CASE
+                            WHEN s.max_avg_stars != s.min_avg_stars
+                            THEN
+                                (COALESCE(p.avg_stars, s.min_avg_stars) - s.min_avg_stars)
+                                / (s.max_avg_stars - s.min_avg_stars)
+                            ELSE
+                                0.5
+                        END
+                    ) * 0.6
+                    +
+                    (
+                        CASE
+                            WHEN s.max_total_reviews > 0
+                            THEN
+                                LN(COALESCE(p.total_reviews, 1) + 1)
+                                / LN(s.max_total_reviews + 1)
+                            ELSE
+                                0
+                        END
+                    ) * 0.4
+                )::numeric
+            , 3),
+            "updatedAt" = NOW()
+        FROM stats s
+        WHERE p."deletedAt" IS NULL;
+        """
+
+        try:
+            async with self.db_pool.acquire() as conn:
+                await conn.execute(sql)
+            return True
+
+        except Exception as e:
+            print(f"Error normalizing data: {e}")
+            return False
+    
+    async def get_poi_from_source_table(self, poi_ids: List[UUID]) -> List[dict]:
+        """
+        Lấy data từ bảng Poi (source table)
+        
+        Args:
+            poi_ids: List UUID của các POI
+            
+        Returns:
+            List dict chứa thông tin POI từ bảng Poi
+        """
+        if not poi_ids or not self.db_pool:
+            return []
+        
+        try:
+            async with self.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    'SELECT id, content, raw_data, metadata FROM "Poi" WHERE "id" = ANY($1::uuid[])',
+                    poi_ids
+                )
+                return [dict(row) for row in rows]
+
+        except Exception as e:
+            print(f"Error getting POI from source table: {e}")
+            return []
+    
+    async def get_min_avg_stars(self) -> float:
+        """
+        Lấy giá trị MIN của avg_stars từ PoiClean
+        
+        Returns:
+            Giá trị min của avg_stars, default 1.0 nếu không có
+        """
+        if not self.db_pool:
+            return 1.0
+        
+        try:
+            async with self.db_pool.acquire() as conn:
+                min_row = await conn.fetchrow(
+                    'SELECT MIN(avg_stars) AS min_avg_stars FROM "PoiClean" WHERE avg_stars IS NOT NULL AND "deletedAt" IS NULL'
+                )
+                return min_row["min_avg_stars"] if min_row and min_row["min_avg_stars"] else 1.0
+
+        except Exception as e:
+            print(f"Error getting min avg_stars: {e}")
+            return 1.0

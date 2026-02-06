@@ -79,18 +79,15 @@ async def health_check():
     
     # Check Qdrant (async client)
     try:
-        # Sử dụng async client từ route service nếu có
-        qdrant_client = getattr(route_api_module._route_service_instance, "qdrant_client", None)
-        if qdrant_client is None:
-            # Fallback: tạo temp async client
-            temp_client = AsyncQdrantClient(
-                url=Config.QDRANT_URL,
-                api_key=Config.QDRANT_API_KEY if Config.QDRANT_API_KEY else None
-            )
-            await temp_client.get_collections()
-            await temp_client.close()
+        # Sử dụng async client từ vector_store trong route service
+        if route_api_module._route_service_instance is not None:
+            vector_store = route_api_module._route_service_instance.base_service.vector_store
+            if vector_store and vector_store.client:
+                await vector_store.client.get_collections()
+            else:
+                raise RuntimeError("Vector store or client not initialized")
         else:
-            await qdrant_client.get_collections()
+            raise RuntimeError("Route service not initialized")
         health_status["checks"]["qdrant"] = "healthy"
     except Exception as e:
         health_status["checks"]["qdrant"] = f"unhealthy: {str(e)}"
@@ -119,16 +116,16 @@ async def startup_event():
     from retrieval.qdrant_vector_store import QdrantVectorStore
     from retrieval.embeddings import EmbeddingGenerator
     from services.route_service import RouteService
-    from services.location_service import LocationService
+    from services.location_search import LocationSearch
     from services.poi_service import PoiService
-    from services.ingest_poi_to_qdrant import IngestPoiToQdrantService
+    from services.cache_search import CacheSearch
+
 
     # Lấy pools từ config
     db_pool = get_db_pool()
     redis_client = get_redis_client()
 
     # Set cache service singleton cho route API
-    from services.cache_search import CacheSearch
     route_api_module._cache_service = CacheSearch(redis_client)
     
     # 3. Khởi tạo AsyncQdrantClient
@@ -137,12 +134,16 @@ async def startup_event():
         api_key=Config.QDRANT_API_KEY if Config.QDRANT_API_KEY else None
     )
     
-    # 4. Khởi tạo QdrantVectorStore với AsyncQdrantClient
-    vector_store = QdrantVectorStore(client=async_qdrant)
-    await vector_store.initialize_async()
-    
-    # 5. Khởi tạo EmbeddingGenerator (shared singleton)
+    # 4. Khởi tạo EmbeddingGenerator (shared singleton)
     embedder = EmbeddingGenerator()
+    
+    # 5. Khởi tạo QdrantVectorStore với AsyncQdrantClient, db_pool và embedder
+    vector_store = QdrantVectorStore(
+        client=async_qdrant,
+        db_pool=db_pool,
+        embedder=embedder
+    )
+    await vector_store.initialize_async()
     
     # 6. Khởi tạo services với async resources + shared vector_store & embedder
     route_api_module._route_service_instance = RouteService(
@@ -152,11 +153,8 @@ async def startup_event():
         embedder=embedder
     )
     
-    # Attach async_qdrant cho backward compatibility
-    route_api_module._route_service_instance.qdrant_client = async_qdrant
-    
     # Update location service với async resources
-    location_api_module.location_service = LocationService(
+    location_api_module.location_search = LocationSearch(
         db_pool=db_pool,
         redis_client=redis_client
     )
@@ -167,9 +165,8 @@ async def startup_event():
         redis_client=redis_client
     )
     
-    # Initialize IngestPoiToQdrantService
-    poi_api_module.ingest_qdrant_service = IngestPoiToQdrantService(db_pool=db_pool)
-    await poi_api_module.ingest_qdrant_service.initialize()
+    # Set qdrant_vector_store cho POI API (dùng chung với route service)
+    poi_api_module.qdrant_vector_store = vector_store
     
     # Set search_service cho POI API (dùng chung với route service)
     poi_api_module.search_service = route_api_module._route_service_instance
@@ -183,11 +180,12 @@ async def shutdown_event():
     """Close async resources khi server shutdown"""
     print("🛑 Shutting down async resources...")
     
-    # Close AsyncQdrantClient
-    qdrant_client = getattr(route_api_module._route_service_instance, "qdrant_client", None)
-    if qdrant_client is not None:
-        await qdrant_client.close()
-        print("✅ Qdrant client closed")
+    # Close AsyncQdrantClient từ vector_store
+    if route_api_module._route_service_instance is not None:
+        vector_store = route_api_module._route_service_instance.base_service.vector_store
+        if vector_store and vector_store.client:
+            await vector_store.client.close()
+            print("✅ Qdrant client closed")
     
     await close_db_pool()
     await close_redis_client()

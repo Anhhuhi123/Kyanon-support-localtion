@@ -14,7 +14,7 @@ import asyncpg
 import redis.asyncio as aioredis
 
 
-class LocationService:
+class LocationSearch:
     """Service xử lý logic tìm kiếm địa điểm với H3 + Redis cache (ASYNC)"""
     
     def __init__(self, db_pool: asyncpg.Pool = None, redis_client: aioredis.Redis = None):
