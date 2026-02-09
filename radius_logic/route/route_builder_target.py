@@ -236,20 +236,24 @@ class TargetRouteBuilder(BaseRouteBuilder):
             if 'category' in places[poi_idx]:
                 category_sequence.append(places[poi_idx].get('category'))
             
-            # Update cafe_counter sau khi thêm POI
-            if should_insert_cafe:
-                poi_cat = places[poi_idx].get('category', '')
-                is_cafe = bool(poi_cat and 'cafe' in poi_cat.lower())
-                is_restaurant = poi_cat == 'Restaurant'
-                
-                if is_cafe or is_restaurant:
-                    cafe_counter = 0  # Reset counter nếu POI mới là Cafe hoặc Restaurant
-                else:
-                    cafe_counter += 1  # Tăng counter lên 1
-            
-            # Nhận updated cafe_counter từ best_next nếu có
-            if 'updated_cafe_counter' in best_next:
-                cafe_counter = best_next['updated_cafe_counter']
+
+            selected_cat = places[poi_idx].get('category')
+            if selected_cat:
+                category_sequence.append(selected_cat)
+
+                # Cập nhật cafe_counter:
+                # - Nếu reset_cafe_counter=True (Restaurant/Cafe) → reset về 0
+                # - Ngược lại (category khác) → +1
+                # Khi cafe_counter >= 2 → trigger cafe-sequence (chèn Cafe)
+                if should_insert_cafe:
+                    if best_next.get("reset_cafe_counter", False):
+                        # Restaurant hoặc Cafe → reset counter (cả 2 đều là nơi dừng chân)
+                        cafe_counter = 0
+                        print(f"   🍽️/☕ Chọn {selected_cat} (dừng chân) → Reset cafe_counter = 0")
+                    else:
+                        # POI khác → +1
+                        cafe_counter += 1
+                        print(f"   📍 Chọn {selected_cat} → cafe_counter = {cafe_counter}")
             
             travel_time = self.calculator.calculate_travel_time(
                 distance_matrix[current_pos][poi_idx + 1],
@@ -328,7 +332,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
         """Chọn POI giữa với logic xen kẽ category, meal priority và cafe-sequence"""
         
         def is_cafe_cat(cat: Optional[str]) -> bool:
-            # CHỈ "Cafe" trigger cafe-sequence, "Cafe & Bakery" xen kẽ bình thường
+            # Category cố định từ UI: "Cafe" hoặc "Cafe & Bakery"
             return cat == "Cafe"
         
         # Kiểm tra meal time priority
@@ -354,8 +358,20 @@ class TargetRouteBuilder(BaseRouteBuilder):
                     should_prioritize_restaurant = True
                     target_meal_type = 'dinner'
         
-        # Xác định category bắt buộc
-        required_category = None
+        # ============================================================
+        # BƯỚC 1: Xác định category bắt buộc cho POI tiếp theo
+        # ============================================================
+        # required_category: ép chọn loại POI cụ thể ('Restaurant'/'Cafe'/alternation)
+        # exclude_restaurant: True = loại TẤT CẢ restaurant khỏi candidates (giữ cho meal time)
+        #                     False = cho phép restaurant được xét bình thường
+        
+        required_category = None  # Chưa ép category nào
+        
+        # Khởi tạo exclude_restaurant:
+        # - Nếu should_insert_restaurant_for_meal = True → ban đầu exclude_restaurant = True
+        #   (loại restaurant để "giữ" cho meal time, tránh chọn quá sớm)
+        # - Nếu should_insert_restaurant_for_meal = False → exclude_restaurant = False
+        #   (không loại restaurant, chạy bình thường)
         exclude_restaurant = should_insert_restaurant_for_meal
         
         if should_prioritize_restaurant:
@@ -366,11 +382,15 @@ class TargetRouteBuilder(BaseRouteBuilder):
             if has_restaurant_available:
                 required_category = 'Restaurant'
                 exclude_restaurant = False
+        # Nếu đã chèn đủ 2 bữa thì xét thành True luôn  để ko chèn nữa
         elif should_insert_restaurant_for_meal and lunch_restaurant_inserted and dinner_restaurant_inserted:
             exclude_restaurant = True
         
-        # Cafe-sequence logic: chèn cafe sau mỗi 2 POI không phải cafe
-        # NHƯNG: Không chèn cafe nếu đang trong meal window (meal priority cao nhất)
+        # ============================================================
+        # BƯỚC 3: CAFE-SEQUENCE - Chèn Cafe sau mỗi 2 POI
+        # ============================================================
+        # Logic: Nếu cafe_counter >= 2 → chèn POI loại "Cafe" (không phải "Cafe & Bakery")
+        # NHƯNG: Meal time có priority cao hơn → block cafe-sequence khi trong meal window
         if should_insert_cafe and required_category is None:
             # Check xem có đang trong meal window không
             in_meal_window = False
@@ -389,53 +409,94 @@ class TargetRouteBuilder(BaseRouteBuilder):
             
             # Chỉ chèn cafe khi KHÔNG trong meal window
             if not in_meal_window and cafe_counter >= 2:
-                # Tìm category cafe khả dụng
-                cafe_categories = []
-                for i, p in enumerate(places):
-                    if i in visited:
-                        continue
-                    cat = p.get('category')
-                    if is_cafe_cat(cat):
-                        cafe_categories.append(cat)
-                
-                if cafe_categories:
-                    required_category = cafe_categories[0]
-                    exclude_restaurant = False
-                    print(f"☕ Cafe-sequence triggered: cafe_counter={cafe_counter} >= 2 → Chèn Cafe")
+                # Trigger cafe-insert using sentinel 'CAFE' (so sánh bằng is_cafe_cat sau)
+                required_category = 'Cafe'
+                # exclude_restaurant  là ưu tiên lv1 nên cần false lại thì mới chèn được cafe
+                exclude_restaurant = False
+                print(f"☕ Cafe-sequence triggered: cafe_counter={cafe_counter} >= 2 → Chèn Cafe")
         
-        # Loại cafe khỏi alternation khi cafe-sequence bật
+        # ============================================================
+        # BƯỚC 4: Xây dựng alternation_categories (xen kẽ category)
+        # ============================================================
+        # Loại "Cafe" khỏi alternation khi cafe-sequence bật
+        # Lý do: Cafe chỉ được chèn theo sequence (sau 2 POI), không xen kẽ bình thường
+        # Ví dụ: all_categories = ["Culture", "Nature", "Cafe", "Restaurant"]
+        #        → alternation_categories = ["Culture", "Nature", "Restaurant"] (bỏ "Cafe")
         alternation_categories = [
             c for c in all_categories
-            if not (should_insert_cafe and is_cafe_cat(c))
+            if not (should_insert_cafe and is_cafe_cat(c))  # Bỏ "Cafe" nếu bật sequence
         ] if all_categories else []
         
-        # Nếu chưa có required_category, dùng alternation (skip cafe nếu đang quản lý sequence)
+        # Debug: in ra để kiểm tra
+        print(f"🔍 DEBUG: all_categories={all_categories}")
+        print(f"🔍 DEBUG: should_insert_cafe={should_insert_cafe}")
+        print(f"🔍 DEBUG: alternation_categories={alternation_categories}")
+        print(f"🔍 DEBUG: cafe_counter={cafe_counter}")
+
+        # Cách 2 cho dê hiểu
+        # alternation_categories = []
+
+        # if all_categories:
+        #     for c in all_categories:
+        #         if should_insert_cafe and is_cafe_cat(c):
+        #             continue
+        #         alternation_categories.append(c)
+
+        
+        # ============================================================
+        # BƯỚC 5: ALTERNATION - Xen kẽ category khi không có yêu cầu đặc biệt
+        # ============================================================
+        # Nếu không có required_category (không ép Restaurant/Cafe) → dùng alternation
+        # Logic: Chọn category tiếp theo trong vòng luân phiên dựa trên category vừa chọn
+        # Ví dụ: alternation_categories = ["Culture", "Nature", "Restaurant"]
+        #        category_sequence[-1] = "Nature" → chọn "Restaurant" (phần tử kế tiếp)
         if required_category is None and category_sequence and alternation_categories:
-            last_category = category_sequence[-1]
+            last_category = category_sequence[-1]  # Category POI vừa thêm
             try:
+                # Tìm vị trí của last_category trong list alternation
                 current_idx = alternation_categories.index(last_category)
+                # Chọn phần tử kế tiếp (vòng quanh nếu hết list)
                 next_idx = (current_idx + 1) % len(alternation_categories)
                 required_category = alternation_categories[next_idx]
             except ValueError:
+                # Nếu last_category không có trong alternation → chọn phần tử đầu
                 required_category = alternation_categories[0] if alternation_categories else None
         
-        # Tìm candidates với category yêu cầu
+        # ============================================================
+        # BƯỚC 6: Lọc candidates theo các điều kiện
+        # ============================================================
         candidates = []
         last_added_place = places[route[-1]] if route else None
         
         for i, place in enumerate(places):
+            # --- Filter 1: Bỏ POI đã dùng ---
             if i in visited:
                 continue
             
+            # --- Filter 2: Loại Restaurant nếu exclude_restaurant = True ---
+            # (Đang giữ restaurant cho meal time)
             if exclude_restaurant and place.get('category') == 'Restaurant':
                 continue
             
-            if required_category and place.get('category') != required_category:
-                continue
+            # --- Filter 3: Kiểm tra required_category (ép chọn loại POI) ---
+            # Nếu required_category == 'CAFE' thì match bằng substring (is_cafe_cat),
+            # ngược lại match bằng equality như trước
+            if required_category:
+                # Kiểm tra trường hợp đặc biệt khi yêu cầu là "Cafe" (xử lý khác với các category khác).
+                if required_category == 'Cafe':
+                    # Kiểm tra xem place có phải là cafe không bằng hàm is_cafe_cat  nếu ko thì bỏ qua nhảy qua POI tiếp thep
+                    if not is_cafe_cat(place.get('category')):
+                        continue
+                else:
+                    if place.get('category') != required_category:
+                        continue
             
+            # --- Filter 4: Tránh chọn 2 POI cùng loại đồ ăn liên tiếp ---
+            # Ví dụ: Phở → Bún chả (cùng Vietnamese food) → bỏ
             if last_added_place and self.validator.is_same_food_type(last_added_place, place):
                 continue
             
+            # --- Filter 5: Kiểm tra opening hours (giờ mở cửa) ---
             if current_datetime:
                 travel_time_to_poi = self.calculator.calculate_travel_time(
                     distance_matrix[current_pos][i + 1],
@@ -444,9 +505,11 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 arrival_time = current_datetime + timedelta(
                     minutes=total_travel_time + total_stay_time + travel_time_to_poi
                 )
+                # Bỏ nếu POI đóng cửa vào thời điểm arrival
                 if not self.validator.is_poi_available_at_time(place, arrival_time):
                     continue
             
+            # --- Tính combined score (70% similarity + 30% distance + angle penalty) ---
             combined = self.calculator.calculate_combined_score(
                 place_idx=i,
                 current_pos=current_pos,
@@ -457,7 +520,8 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 user_location=user_location
             )
             
-            # Kiểm tra thời gian khả thi
+            # --- Filter 6: Kiểm tra TIME BUDGET ---
+            # Phải đủ thời gian: (travel đến POI) + (stay tại POI) + (quay về user) <= max_time
             temp_travel = total_travel_time + self.calculator.calculate_travel_time(
                 distance_matrix[current_pos][i + 1],
                 transportation_mode
@@ -467,43 +531,62 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 places[i].get("stay_time")
             )
             estimated_return = self.calculator.calculate_travel_time(
-                distance_matrix[i + 1][0],
+                distance_matrix[i + 1][0],  # Từ POI này về user
                 transportation_mode
             )
             
+            # Bỏ nếu vượt quá time budget
             if temp_travel + temp_stay + estimated_return > max_time_minutes:
                 continue
             
+            # ✅ POI này pass tất cả filters → thêm vào candidates
             candidates.append((i, combined))
         
-        # Chọn POI tốt nhất
+        # ============================================================
+        # BƯỚC 7: Chọn POI tốt nhất từ candidates
+        # ============================================================
         if candidates:
+            # Sort: combined score cao → thấp; nếu bằng nhau thì index nhỏ hơn (deterministic)
             candidates.sort(key=lambda x: (-x[1], x[0]))
             best_idx = candidates[0][0]
             
-            # 🔄 Reset cafe_counter khi chọn Restaurant hoặc Cafe (cả 2 đều là nơi dừng chân)
-            # "Cafe & Bakery" KHÔNG reset - thuộc Food & Local Flavours, xen kẽ bình thường
+            # ============================================================
+            # BƯỚC 8: Xác định có reset cafe_counter hay không
+            # ============================================================
+            # Logic reset cafe_counter:
+            # - "Restaurant" hoặc "Cafe" → reset về 0 (cả 2 đều là nơi dừng chân nghỉ ngơi)
+            # - "Cafe & Bakery" → KHÔNG reset (thuộc Food & Local Flavours, xen kẽ bình thường)
+            # - Category khác → caller sẽ tăng cafe_counter += 1
             selected_cat = places[best_idx].get('category')
             if selected_cat in ("Restaurant", "Cafe"):
-                # Restaurant/Cafe → reset cafe_counter về 0
+                # Trả về flag reset_cafe_counter=True → caller sẽ set cafe_counter = 0
                 return {
                     'index': best_idx,
                     'target_meal_type': target_meal_type,
                     'reset_cafe_counter': True
                 }
             
+            # Category khác → caller sẽ tăng cafe_counter += 1
             return {
                 'index': best_idx,
                 'target_meal_type': target_meal_type
             }
         
-        # Nếu không tìm thấy với category yêu cầu, bỏ qua category constraint và tìm lại
+        # ============================================================
+        # BƯỚC 9: FALLBACK - Nếu không tìm được candidate với required_category
+        # ============================================================
+        # Bỏ constraint category và tìm lại (vẫn tôn trọng exclude_restaurant và các filter khác)
         if not candidates and required_category:
             for i, place in enumerate(places):
                 if i in visited:
                     continue
                 
                 if exclude_restaurant and place.get('category') == 'Restaurant':
+                    continue
+                
+                # QUAN TRỌNG: Fallback vẫn phải tôn trọng cafe-sequence
+                # KHÔNG được chọn "Cafe" nếu should_insert_cafe=True và cafe_counter < 2
+                if should_insert_cafe and is_cafe_cat(place.get('category')) and cafe_counter < 2:
                     continue
                 
                 if last_added_place and self.validator.is_same_food_type(last_added_place, place):
@@ -550,8 +633,19 @@ class TargetRouteBuilder(BaseRouteBuilder):
             
             if candidates:
                 candidates.sort(key=lambda x: (-x[1], x[0]))
+                best_idx = candidates[0][0]
+                
+                # Check category để xác định reset_cafe_counter (giống logic chính)
+                selected_cat = places[best_idx].get('category')
+                if selected_cat in ("Restaurant", "Cafe"):
+                    return {
+                        'index': best_idx,
+                        'target_meal_type': None,
+                        'reset_cafe_counter': True
+                    }
+                
                 return {
-                    'index': candidates[0][0],
+                    'index': best_idx,
                     'target_meal_type': None
                 }
         
