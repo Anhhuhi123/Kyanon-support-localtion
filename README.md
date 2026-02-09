@@ -25,7 +25,7 @@ Kyanon-support-localtion/
 │
 ├── services/                        # Business Logic Layer (Async Service Pattern)
 │   ├── __init__.py
-│   ├── location_search.py           # Spatial search service (H3 + PostGIS)
+│   ├── poi_search.py           # Spatial search service (H3 + PostGIS)
 │   ├── qdrant_search.py             # Base semantic search service (Qdrant)
 │   ├── spatial_search.py            # Combined spatial + semantic search
 │   ├── route_search.py              # Route building & POI replacement logic
@@ -497,10 +497,10 @@ Sync POI changes to Qdrant (add/delete/update)
 
 ---
 
-### **E. services/location_search.py**
+### **E. services/poi_search.py**
 **Nhiệm vụ:** Spatial search service (PostGIS + H3)
 
-**Class:** `LocationSearch`
+**Class:** `PoiSearch`
 
 **Features:**
 - H3 radius search với Redis cache
@@ -688,7 +688,7 @@ combined_score = 0.7 × normalized_score + 0.3 × (1 - normalized_distance)
 ## 🗃️ Data Models (Pydantic Schemas)
 
 ### **pydantics/location.py**
-- `LocationSearchRequest`: Spatial search input
+- `PoiSearchRequest`: Spatial search input
 - `LocationResponse`: POI data output
 
 ### **pydantics/route.py**

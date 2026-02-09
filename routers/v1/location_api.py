@@ -7,17 +7,17 @@ import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 from config.config import Config
 from fastapi import APIRouter, HTTPException
-from pydantics.location import LocationSearchRequest
-from services.location_search import LocationSearch
+from pydantics.location import PoiSearchRequest
+from services.poi_search import PoiSearch
 
 # Initialize router
 router = APIRouter(prefix="/api/v1/locations", tags=["Location Search (PostGIS)"])
 
 # Initialize service
-location_search = LocationSearch(Config.get_db_connection_string())
+poi_search = PoiSearch(Config.get_db_connection_string())
 
 @router.post("/search")
-async def search_locations(request: LocationSearchRequest):
+async def search_locations(request: PoiSearchRequest):
     """
     Tìm kiếm TẤT CẢ địa điểm gần nhất (>= 50) xung quanh tọa độ theo phương tiện di chuyển
     
@@ -30,7 +30,7 @@ async def search_locations(request: LocationSearchRequest):
         JSON response với danh sách TẤT CẢ địa điểm trong bán kính
     """
     try:
-        result = await location_search.find_nearest_locations(
+        result = await poi_search.find_nearest_locations(
             latitude=request.latitude,
             longitude=request.longitude,
             transportation_mode=request.transportation_mode

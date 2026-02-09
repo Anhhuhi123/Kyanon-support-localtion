@@ -116,7 +116,7 @@ async def startup_event():
     from retrieval.qdrant_vector_store import QdrantVectorStore
     from retrieval.embeddings import EmbeddingGenerator
     from services.route_service import RouteService
-    from services.location_search import LocationSearch
+    from services.poi_search import PoiSearch
     from services.poi_service import PoiService
     from services.cache_search import CacheSearch
 
@@ -154,7 +154,7 @@ async def startup_event():
     )
     
     # Update location service với async resources
-    location_api_module.location_search = LocationSearch(
+    location_api_module.poi_search = PoiSearch(
         db_pool=db_pool,
         redis_client=redis_client
     )

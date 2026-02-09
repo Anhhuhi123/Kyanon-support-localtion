@@ -34,7 +34,7 @@ class Config:
     # Qdrant configurations
     USE_QDRANT = True  # Use Qdrant for vector storage
     QDRANT_COLLECTION_NAME = "VIAMO"  # Lưu trữ trong Qdrant
-    QDRANT_COLLECTION_NAME_TEST = "VIAMO_TEST"  # Test
+    QDRANT_COLLECTION_NAME_TEST = "VIAMO"  # Test
     QDRANT_URL = os.getenv("QDRANT_URL")
     QDRANT_API_KEY = os.getenv("QDRANT_API_KEY")
     VECTOR_DIMENSION = int(os.getenv("VECTOR_DIMENSION"))  # E5-large: 1024, E5-base: 768
