@@ -12,6 +12,20 @@
    │   └─ CHỈ kích hoạt khi user KHÔNG chọn Food & Local Flavours
 ```
 
+- Thời gian
+- Historical Monument → 40  
+- Museum / Gallery → 65  
+- Bar / Pub -> 100
+- Viewpoint / Scenic Park → 35  
+- Church / Temple → 22  
+- Restaurant / Market / Supermarket → 70  
+- Café / Snack Stop → 25  
+- Plaza / Street Walk → 35  
+- Beach / Recreational Park → 80  
+- Event / Cultural Activity → 105  
+- Local Shop / Souvenir → 20  
+- Adventure / Outdoor Activity → 85  
+- Thời gian mỗi POI  được phân bổ dựa trên list này
 ---
 
 ## 🔍 Logic Xử Lý Query
