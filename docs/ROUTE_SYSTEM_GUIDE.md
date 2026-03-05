@@ -3,10 +3,10 @@
 ### Workflow Tổng Quát
 ```
 2. Hệ thống xử lý:
-   ├─ Spatial Search: Tìm POI gần user (PostGIS)
-   ├─ Semantic Search: Tìm POI phù hợp nhu cầu (Qdrant)
-   ├─ Filter Opening Hours: Lọc POI đang mở cửa (nếu có current_time)
-   ├─ Meal Time Detection: Chèn Restaurant (12:00–15:00 / 18:30–22:00)
+   ├─ Tìm POI gần user (PostGIS)
+   ├─ Tìm POI phù hợp nhu cầu (Qdrant)
+   ├─ Lọc POI đang mở cửa (nếu có current_time)
+   ├─ Chèn Restaurant (12:00–15:00 / 18:30–22:00)
    │   └─ CHỈ kích hoạt khi user KHÔNG chọn Food & Local Flavours
    ├─ Cafe Counter: Tự động chèn Cafe sau mỗi 2 POI chính
    │   └─ CHỈ kích hoạt khi user KHÔNG chọn Food & Local Flavours
