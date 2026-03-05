@@ -161,9 +161,9 @@ class DurationRouteBuilder(BaseRouteBuilder):
             print("🍽️  MEAL TIME ANALYSIS (Duration Mode)")
             print("="*60)
             if need_lunch_restaurant:
-                print("✅ Overlap với LUNCH TIME (11:00-14:00) >= 60 phút")
+                print("✅ Overlap với LUNCH TIME (12:00-15:00) >= 60 phút")
             if need_dinner_restaurant:
-                print("✅ Overlap với DINNER TIME (17:00-20:00) >= 60 phút")
+                print("✅ Overlap với DINNER TIME (18:30-20:00) >= 60 phút")
             print("="*60 + "\n")
         
         # ============================================================

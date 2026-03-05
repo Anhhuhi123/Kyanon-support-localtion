@@ -1,269 +1,237 @@
-# 📍 Hướng Dẫn Hệ Thống Xây Dựng Route
-
-## 📋 Mục Lục
-1. [Tổng Quan Hệ Thống](#tổng-quan-hệ-thống)
-2. [Các Endpoint API](#các-endpoint-api)
-3. [Logic Xử Lý Query](#logic-xử-lý-query)
-4. [Quy Luật Chọn POI](#quy-luật-chọn-poi)
-5. [Các Trường Hợp Sử Dụng](#các-trường-hợp-sử-dụng)
-6. [Quản Lý Cache & Replace Route](#quản-lý-cache--replace-route)
-
----
-
 ## 🎯 Tổng Quan Hệ Thống
 
 ### Workflow Tổng Quát
 ```
-1. User gửi request với:
-   - Tọa độ hiện tại (latitude, longitude)
-   - Phương tiện di chuyển (transportation_mode)
-   - Nhu cầu du lịch (semantic_query)
-   - Thời gian có (max_time_minutes)
-   - Số địa điểm mong muốn (target_places)
-
 2. Hệ thống xử lý:
    ├─ Spatial Search: Tìm POI gần user (PostGIS)
    ├─ Semantic Search: Tìm POI phù hợp nhu cầu (Qdrant)
    ├─ Filter Opening Hours: Lọc POI đang mở cửa (nếu có current_time)
-   ├─ Meal Time Detection: Tự động thêm Restaurant nếu trùng giờ ăn
-   └─ Route Building: Xây dựng 3 routes tối ưu (Greedy Algorithm)
-
-3. Kết quả trả về:
-   - Tối đa 3 routes
-   - Mỗi route có 5-7 POI (tùy target_places)
-   - Thông tin chi tiết: thời gian di chuyển, lưu trú, rating, địa chỉ...
-```
-
----
-
-## 🛠️ Các Endpoint API
-
-### 1. **POST `/api/v1/route/routes`** - Xây Dựng Routes
-
-#### Request Body
-```json
-{
-  "user_id": "816d05bf-5b65-49d2-9087-77c4c83be655",
-  "latitude": 21.028511,
-  "longitude": 105.804817,
-  "transportation_mode": "WALKING",
-  "semantic_query": "Food & Local Flavours",
-  "current_time": "2026-01-16T08:00:00",
-  "max_time_minutes": 300,
-  "target_places": 5,
-  "max_routes": 3,
-  "top_k_semantic": 10,
-  "customer_like": true,
-  "delete_cache": false,
-  "replace_route": null
-}
-```
-
-#### Các Tham Số
-
-| Tham số | Bắt buộc | Mặc định | Mô tả |
-|---------|----------|----------|-------|
-| `user_id` | ❌ | null | UUID của user (để cache routes) |
-| `latitude` | ✅ | - | Vĩ độ hiện tại |
-| `longitude` | ✅ | - | Kinh độ hiện tại |
-| `transportation_mode` | ✅ | - | `WALKING/BICYCLING/TRANSIT/FLEXIBLE/DRIVING` |
-| `semantic_query` | ✅ | - | Nhu cầu du lịch (xem danh sách bên dưới) |
-| `current_time` | ❌ | null | Thời điểm hiện tại (ISO format) - để lọc POI đang mở |
-| `max_time_minutes` | ❌ | 180 | Thời gian tối đa (phút) |
-| `target_places` | ❌ | 5 | Số địa điểm mỗi route |
-| `max_routes` | ❌ | 3 | Số routes tối đa |
-| `top_k_semantic` | ❌ | 10 | Số POI từ semantic search |
-| `customer_like` | ❌ | false | Tự động thêm Entertainment |
-| `delete_cache` | ❌ | false | Xóa cache trước khi build (dành cho tester khi muốn khởi tạo lại chứ ko sẽ tăng route_id lên miết 1 2 3 4 mà ko dừng lại) |
-| `replace_route` | ❌ | null | ID route cần thay thế (1, 2, 3) (ko được bỏ vào nếu chưa chạy lần đầu tiên để có route_id )|
-
-#### Tốc Độ Di Chuyển
-```python
-TRANSPORTATION_SPEEDS = {
-    "WALKING": 5 km/h,      # Đi bộ
-    "BIKE": 15 km/h,   # Xe bike
-    "CAR": 25 km/h,     # Xe car
-    "FLEXIBLE": 30 km/h,    # Linh hoạt
-}
-```
-
----
-
-### 2. **POST `/api/v1/poi/update-poi`** - Thay Thế POI Trong Route
-
-#### Request Body
-```json
-{
-  "user_id": "816d05bf-5b65-49d2-9087-77c4c83be655",
-  "route_id": "1",
-  "poi_id_to_replace": "123e4567-e89b-12d3-a456-426614174000",
-  "current_time": "2026-01-16T10:30:00"
-}
-```
-
-#### Response - Trả về 3 POI Candidates
-```json
-{
-  "status": "success",
-  "message": "Found 3 alternative POI(s) for category 'Restaurant'",
-  "old_poi_id": "123e4567-e89b-12d3-a456-426614174000",
-  "category": "Restaurant",
-  "route_id": "1",
-  "candidates": [
-    {
-      "place_id": "abc...",
-      "place_name": "Bún Chả Hương Liên",
-      "category": "Restaurant",
-      "rating": 4.5,
-      "travel_time_minutes": 12.5,
-      "stay_time_minutes": 30,
-      "arrival_time": "2026-01-16 11:00:00",
-      "opening_hours_today": "07:00 - 21:00",
-      "distance_changes": {
-        "from_prev_old": 0.8,
-        "from_prev_new": 1.2,
-        "to_next_old": 1.5,
-        "to_next_new": 1.8
-      },
-      "time_changes": {
-        "from_prev_old": 9.6,
-        "from_prev_new": 14.4,
-        "to_next_old": 18.0,
-        "to_next_new": 21.6
-      }
-    },
-    // ... 2 POI candidates khác
-  ]
-}
-```
-
----
-
-### 3. **POST `/api/v1/poi/confirm-replace`** - Xác Nhận Thay Thế POI
-
-#### Request Body
-```json
-{
-  "user_id": "816d05bf-5b65-49d2-9087-77c4c83be655",
-  "route_id": "1",
-  "old_poi_id": "123e4567-e89b-12d3-a456-426614174000",
-  "new_poi_id": "abc-def-ghi"
-}
+   ├─ Meal Time Detection: Chèn Restaurant (12:00–15:00 / 18:30–22:00)
+   │   └─ CHỈ kích hoạt khi user KHÔNG chọn Food & Local Flavours
+   ├─ Cafe Counter: Tự động chèn Cafe sau mỗi 2 POI chính
+   │   └─ CHỈ kích hoạt khi user KHÔNG chọn Food & Local Flavours
 ```
 
 ---
 
 ## 🔍 Logic Xử Lý Query
 
-### Danh Sách Category Hỗ Trợ
-1. **Food & Local Flavours** → Tự động mở rộng thành:
-   - `Cafe & Bakery`
-   - `Restaurant`
+### Danh Sách 6 Interest Hỗ Trợ (Chọn Tối Đa 3)
 
-2. **Culture & heritage**
-3. **Nature & View**
-4. **Entertainment**
-5. **Shopping**
-6. **Bar**
+| # | Interest | Sub-categories trong pool | Mô tả |
+|---|----------|--------------------------|-------|
+| 1 | **Food & Local Flavours** | `Cafe & Bakery` + `Restaurant` | Ẩm thực, quán cà phê, nhà hàng |
+| 2 | **Culture & Heritage** | `Culture & heritage` | Bảo tàng, di tích, đình chùa, phố cổ |
+| 3 | **Nature & Scenery** | `Nature & View` | Công viên, hồ, núi, điểm ngắm cảnh |
+| 4 | **Adventure & Leisure** | `Adventure & Leisure` | Hoạt động ngoài trời, thể thao, vui chơi |
+| 5 | **Lifestyle & Urban Vibes** | `Shopping` + `Entertainment` | Mua sắm, trung tâm thương mại, giải trí đô thị |
+| 6 | **Nightlife & Entertainment** | `Bar` + `Entertainment` | Bar, club, phố đêm |
 
-### Quy Tắc Xử Lý Query
+---
 
-#### Case 1: Chọn "Food & Local Flavours"
-```python
-Input: "Food & Local Flavours"
-→ Expand: ["Cafe & Bakery", "Restaurant"]
+### Quy Tắc Cốt Lõi
 
-Kết quả:
-- Tìm top 10 POI cho "Cafe & Bakery"
-- Tìm top 10 POI cho "Restaurant"
-- Merge lại (POI nào có similarity cao hơn sẽ được chọn)
-- Total: ~15-20 POI unique
+#### ✅ Quy Tắc 1: Food & Local Flavours → KHÔNG có Meal-Time Insertion
+
+Khi user chọn **Food & Local Flavours**, pool đã có sẵn `Cafe & Bakery` và `Restaurant`.
+User có thể ghé ăn bất kỳ lúc nào theo alternation tự nhiên → **Không cần chèn thêm meal-time**.
+
+```
+CÓ Food & Local Flavours → meal_time_insertion = FALSE
+   Cafe & Bakery và Restaurant xen kẽ đều theo alternation
+   Không có ràng buộc khung giờ ăn
 ```
 
-**Ví dụ Route:**
+#### ✅ Quy Tắc 2: Không có Food & Local Flavours → CÓ Meal-Time Insertion
+
+Khi user **không chọn Food**, hệ thống tự động chèn Restaurant vào đúng khung giờ ăn:
+
 ```
-Route 1:
-├─ POI 1: Cafe & Bakery (điểm xuất phát)
-├─ POI 2: Restaurant
-├─ POI 3: Cafe & Bakery
-├─ POI 4: Restaurant
-└─ POI 5: Cafe & Bakery (điểm kết thúc gần user)
-```
-
-#### Case 2: Chọn "Food & Local Flavours" + `customer_like = true`
-```python
-Input: "Food & Local Flavours", customer_like = true
-→ Expand: ["Cafe & Bakery", "Restaurant", "Culture & heritage"]
-
-Logic:
-- Nếu chỉ có 1 query "Food & Local Flavours"
-- VÀ customer_like = true
-- → Tự động thêm "Culture & heritage"
-
-Kết quả:
-- Tìm top 10 POI cho "Cafe & Bakery"
-- Tìm top 10 POI cho "Restaurant"
-- Tìm top 10 POI cho "Culture & heritage"
-- Merge lại
-- Total: ~20-30 POI unique
+Lunch window:  12:00 – 15:00
+Dinner window: 18:30 – 22:00
 ```
 
-**Ví dụ Route:**
-```
-Route 1:
-├─ POI 1: Cafe & Bakery
-├─ POI 2: Culture & heritage
-├─ POI 3: Restaurant
-├─ POI 4: Culture & heritage
-└─ POI 5: Cafe & Bakery
+#### ✅ Quy Tắc 3: Cafe-Counter — Chèn Cafe Sau Mỗi 2 POI Chính
 
-Route 2:
-├─ POI 1: Restaurant
-├─ POI 2: Cafe & Bakery
-├─ POI 3: Culture & heritage
-├─ POI 4: Restaurant
-└─ POI 5: Culture & heritage
+Cafe được chèn tự động sau mỗi **2 POI không phải Cafe và không phải Restaurant**.
+Gặp Restaurant (meal-time) → **reset counter về 0**.
+
+```
+cafe_counter = 0
+
+Mỗi POI không phải Cafe và không phải Restaurant:  cafe_counter += 1
+Khi cafe_counter >= 2:                              → chèn Cafe, reset cafe_counter = 0
+Khi gặp Restaurant (meal-time):                    → reset cafe_counter = 0
 ```
 
-#### Case 3: Chọn Nhiều Category
-```python
-Input: "Food & Local Flavours, Nature & View"
-→ Expand: ["Cafe & Bakery", "Restaurant", "Nature & View"]
-
-Kết quả:
-- 3 queries riêng biệt
-- Mỗi query tìm top 10
-- Total: ~25-30 POI unique
+**Ví dụ minh họa (Culture & Heritage + current_time):**
+```
+POI 1: Culture        → cafe_counter = 1
+POI 2: Restaurant     ← LUNCH (meal-time) → cafe_counter = 0  (RESET)
+POI 3: Culture        → cafe_counter = 1
+POI 4: Culture        → cafe_counter = 2  → TRIGGER chèn Cafe
+POI 5: Cafe           → cafe_counter = 0  (RESET)
+POI 6: Culture        → cafe_counter = 1
+POI 7: Culture        → cafe_counter = 2  → TRIGGER chèn Cafe
+POI 8: Cafe (cuối)    → cafe_counter = 0 hoặc 1 POI khác vì POI cuối ưu tiên gần user có điểm cao 
 ```
 
-**Ví dụ Route:**
+> **Lưu ý:** Cafe chỉ được chèn khi **không đang trong meal window**. Nếu cafe_counter >= 2 nhưng
+> đúng lúc arrival_time rơi vào meal window → ưu tiên chèn Restaurant trước, Cafe chờ sau.
+
+---
+
+### Tổ Hợp Chọn Interest & Kết Quả Mở Rộng
+
+#### Case 1: Chỉ chọn Food & Local Flavours
 ```
-Route 1:
-├─ POI 1: Cafe & Bakery
-├─ POI 2: Nature & View
-├─ POI 3: Restaurant
-├─ POI 4: Nature & View
-└─ POI 5: Cafe & Bakery
+Pool: ["Cafe & Bakery", "Restaurant"]
+Meal-time:    ❌ Không có
+Cafe-counter: ❌ Không áp dụng (Cafe đã có trong alternation)
+Alternation:  Cafe & Bakery → Restaurant → Cafe & Bakery → ...
 ```
 
-#### Case 4: Meal Time Auto-Detection
-```python
-Nếu:
-- current_time = "2026-01-16T11:30:00"
-- max_time_minutes = 180 (3 giờ)
-- User KHÔNG chọn "Food & Local Flavours"
-
-→ Hệ thống tự động:
-- Phát hiện overlap với lunch (11:30-13:30) hoặc dinner (18:00-20:00)
-- Tự động thêm "Restaurant" vào query
-- Chèn Restaurant đúng vào meal time window
-
-Ví dụ:
-Input: "Culture & heritage"
-Time: 11:30 - 14:30
-→ Auto expand: ["Culture & heritage", "Restaurant"]
-→ Route sẽ có Restaurant ở giữa (khoảng 12:00-13:00)
+**Ví dụ Route (target_places=5, khởi đầu 09:00):**
 ```
+09:00 - 09:30  [Cafe & Bakery 1] Cafe Giảng - Trứng       ★4.6
+09:38 - 10:28  [Restaurant 1]   Bún Chả Hương Liên        ★4.6
+10:36 - 11:01  [Cafe & Bakery 2] Cộng Cà Phê              ★4.4
+11:08 - 11:58  [Restaurant 2]   Phở Thìn 13 Lò Đúc        ★4.7
+12:05 - 12:30  [Cafe & Bakery 3] The Note Coffee (cuối)   ★4.5
+Kết thúc 12:30 | Tổng: ~180 phút ✅
+```
+
+---
+
+#### Case 2: Chỉ chọn Culture & Heritage (không có Food)
+```
+Pool:         ["Culture & heritage"]
+Meal-time:    ✅ Có (overlap meal window)
+Cafe-counter: ✅ Chèn Cafe sau mỗi 2 POI Culture
+Alternation:  Culture → Culture → ... (xen Cafe và Restaurant theo quy tắc)
+```
+
+**Ví dụ Route (target_places=7, khởi đầu 10:00, có current_time):**
+```
+10:00 - 10:45  [Culture 1] Văn Miếu Quốc Tử Giám          ★4.7  → counter=1
+10:53 - 11:28  [Culture 2] Bảo Tàng Phụ Nữ Việt Nam       ★4.5  → counter=2 → TRIGGER Cafe
+11:35 - 12:00  [Cafe]      Tranquil Books & Coffee         ★4.3  → counter=0 (RESET)
+12:07 - 12:57  [Restaurant] Phở Thìn ← LUNCH              ★4.7  → counter=0 (RESET)
+13:06 - 13:36  [Culture 3] Nhà Hỏa Lò                     ★4.3  → counter=1
+13:43 - 14:13  [Culture 4] Đền Ngọc Sơn                   ★4.6  → counter=2 → TRIGGER Cafe
+14:20 - 14:40  [Cafe]      Cafe Đình (cuối, gần user)      ★4.4  → counter=0
+Kết thúc 14:40 | Tổng: ~280 phút ✅
+
+Ghi chú: Cafe được lấy từ pool Cafe ngoài (không nằm trong interest)
+         nhưng sẵn có trong khu vực tìm kiếm.
+```
+
+---
+
+#### Case 3: Food & Local Flavours + Culture & Heritage (2 interests)
+```
+Pool:         ["Cafe & Bakery", "Restaurant", "Culture & heritage"]
+Meal-time:    ❌ Không có (đã có Food)
+Cafe-counter: ❌ Không áp dụng (Cafe & Bakery đã trong alternation)
+Alternation:  Cafe & Bakery → Culture → Restaurant → Culture → Cafe & Bakery → ...
+```
+
+**Ví dụ Route (target_places=7, khởi đầu 08:00):**
+```
+08:00 - 08:30  [Cafe & Bakery 1] Cafe Giang Trứng          ★4.6
+08:38 - 09:23  [Culture 1]      Văn Miếu Quốc Tử Giám     ★4.7
+09:30 - 10:20  [Restaurant 1]   Bún Chả Hương Liên         ★4.6
+10:28 - 11:13  [Culture 2]      Bảo Tàng Lịch Sử           ★4.5
+11:21 - 11:46  [Cafe & Bakery 2] Cộng Cà Phê              ★4.4
+11:53 - 12:23  [Culture 3]      Nhà Hỏa Lò                 ★4.3
+12:30 - 12:55  [Cafe & Bakery 3] The Note Coffee (cuối)   ★4.5
+Kết thúc 12:55 | Tổng: ~295 phút ✅
+```
+
+---
+
+#### Case 4: Culture & Heritage + Nature & Scenery (không có Food, 2 interests)
+```
+Pool:         ["Culture & heritage", "Nature & View"]
+Meal-time:    ✅ Có (overlap meal window)
+Cafe-counter: ✅ Chèn Cafe sau mỗi 2 POI (Culture hoặc Nature)
+Alternation:  Culture → Nature → Culture → Nature → ...
+```
+
+**Ví dụ Route (target_places=8, khởi đầu 09:00, có current_time):**
+```
+09:00 - 09:45  [Culture 1] Văn Miếu Quốc Tử Giám          ★4.7  → counter=1
+09:53 - 10:33  [Nature 1]  Hồ Tây                          ★4.5  → counter=2 → TRIGGER Cafe
+10:41 - 11:01  [Cafe]      Loading T                       ★4.2  → counter=0 (RESET)
+11:08 - 11:43  [Culture 2] Bảo Tàng Phụ Nữ                ★4.5  → counter=1
+11:50 - 12:30  [Nature 2]  Vườn Bách Thảo                  ★4.2  → counter=2 → TRIGGER Cafe
+               Nhưng next arrival ~12:37 → trong meal window → ưu tiên Restaurant
+12:37 - 13:27  [Restaurant] Bún Bò Nam Bộ ← LUNCH          ★4.4  → counter=0 (RESET)
+13:35 - 14:05  [Culture 3] Nhà Hỏa Lò                     ★4.3  → counter=1
+14:12 - 14:37  [Nature 3]  Nhà Thờ Lớn Hà Nội (cuối)      ★4.5
+Kết thúc 14:37 | Tổng: ~327 phút ✅
+```
+
+---
+
+#### Case 5: Food & Local Flavours + Culture & Heritage + Nature & Scenery (3 interests)
+```
+Pool:         ["Cafe & Bakery", "Restaurant", "Culture & heritage", "Nature & View"]
+Meal-time:    ❌ Không có (đã có Food)
+Cafe-counter: ❌ Không áp dụng
+Alternation:  Cafe & Bakery → Culture → Nature → Restaurant → Cafe & Bakery → ...
+```
+
+**Ví dụ Route (target_places=9, khởi đầu 08:00):**
+```
+08:00 - 08:30  [Cafe & Bakery 1] Cafe Giang Trứng          ★4.6
+08:38 - 09:23  [Culture 1]      Văn Miếu                   ★4.7
+09:31 - 10:11  [Nature 1]       Hồ Tây                     ★4.5
+10:19 - 11:09  [Restaurant 1]   Phở Thìn 13 Lò Đúc         ★4.7
+11:17 - 11:42  [Cafe & Bakery 2] Tranquil Books & Coffee   ★4.3
+11:49 - 12:34  [Culture 2]      Bảo Tàng Lịch Sử           ★4.5
+12:42 - 13:22  [Nature 2]       Vườn Bách Thảo              ★4.2
+13:30 - 14:20  [Restaurant 2]   Bún Chả Hương Liên          ★4.6
+14:28 - 14:53  [Cafe & Bakery 3] Cộng Cà Phê (cuối)        ★4.4
+Kết thúc 14:53 | Tổng: ~413 phút ✅
+```
+
+---
+
+#### Case 6: Culture & Heritage + Nature & Scenery + Adventure & Leisure (3 interests, không có Food)
+```
+Pool:         ["Culture & heritage", "Nature & View", "Adventure & Leisure"]
+Meal-time:    ✅ Có (nếu cung cấp current_time và overlap meal window)
+Cafe-counter: ✅ Chèn Cafe sau mỗi 2 POI (Culture, Nature, hoặc Adventure)
+Alternation:  Culture → Nature → Adventure → Culture → Nature → Adventure → ...
+```
+
+**Ví dụ Route (target_places=9, khởi đầu 08:30, có current_time):**
+```
+08:30 - 09:15  [Culture 1]    Văn Miếu Quốc Tử Giám        ★4.7  → counter=1
+09:23 - 10:03  [Nature 1]     Hồ Tây                        ★4.5  → counter=2 → TRIGGER Cafe
+10:11 - 10:31  [Cafe]         Cafe Đình                     ★4.4  → counter=0 (RESET)
+10:38 - 11:38  [Adventure 1]  Hồ Tây Paddle Boarding        ★4.3  → counter=1
+11:46 - 12:26  [Culture 2]    Bảo Tàng Lịch Sử              ★4.5  → counter=2 → TRIGGER Cafe
+               Nhưng next arrival ~12:35 → trong meal window → ưu tiên Restaurant trước
+12:35 - 13:25  [Restaurant]   Phở Thìn ← LUNCH              ★4.7  → counter=0 (RESET)
+13:33 - 14:13  [Nature 2]     Vườn Bách Thảo                ★4.2  → counter=1
+14:21 - 15:21  [Adventure 2]  Escape Game Hà Nội            ★4.5  → counter=2 → TRIGGER Cafe
+15:29 - 15:49  [Cafe]         Tranquil Books (cuối)          ★4.3  → counter=0
+Kết thúc 15:49 | Tổng: ~439 phút ✅
+```
+
+---
+
+### Bảng Tóm Tắt Quyết Định Theo Interest
+
+| Tổ Hợp | Meal-Time Insert | Cafe-Counter | Ghi Chú |
+|--------|-----------------|-------------|----------|
+| Chỉ Food | ❌ | ❌ | Cafe & Restaurant xen kẽ tự nhiên |
+| Food + bất kỳ | ❌ | ❌ | Food đảm bảo đủ ẩm thực |
+| Không Food, 1 interest | ✅ | ✅ | Cả 2 cơ chế kích hoạt |
+| Không Food, 2 interests | ✅ | ✅ | Cả 2 cơ chế kích hoạt |
+| Không Food, 3 interests | ✅ | ✅ | Cả 2 cơ chế kích hoạt |
 
 ---
 
@@ -276,9 +244,9 @@ Time: 11:30 - 14:30
 **Score Formula:**
 ```python
 combined_score = (
-    0.1  * distance_score    +  # 10% - Gần user
-    0.45 * similarity_score  +  # 45% - Phù hợp nhu cầu
-    0.45 * rating_score         # 45% - Rating cao
+    0.5  * distance_score    +  # 50% - Gần user (ưu tiên hàng đầu)
+    0.1  * similarity_score  +  # 10% - Phù hợp nhu cầu
+    0.4  * rating_score         # 40% - Rating cao
 )
 ```
 
@@ -290,16 +258,16 @@ Query: "Food & Local Flavours"
 POI A: Cafe gần user (0.5km), rating 4.0, similarity 0.85
 → distance_score = 0.95 (rất gần)
 → similarity_score = 0.85
-→ rating_score = 0.8 (4.0/5)
-→ combined = 0.1*0.95 + 0.45*0.85 + 0.45*0.8 = 0.8375
+→ rating_score = 0.80 (4.0/5)
+→ combined = 0.5*0.95 + 0.1*0.85 + 0.4*0.80 = 0.880
 
 POI B: Restaurant xa user (2km), rating 4.8, similarity 0.92
 → distance_score = 0.75
 → similarity_score = 0.92
 → rating_score = 0.96
-→ combined = 0.1*0.75 + 0.45*0.92 + 0.45*0.96 = 0.921
+→ combined = 0.5*0.75 + 0.1*0.92 + 0.4*0.96 = 0.851
 
-→ Chọn POI B (Restaurant)
+→ Chọn POI A (Cafe) — gần user thắng ở vị trí đầu
 ```
 
 **Lưu ý đặc biệt:**
@@ -314,23 +282,13 @@ POI B: Restaurant xa user (2km), rating 4.8, similarity 0.92
 - Hướng về phía user (bearing score)
 - Balance giữa similarity và rating
 
-**Score Formula - Khi Similarity (tức là độ phù hợp của POI với option interest của người dùng) ≥ 0.8:**
+**Score Formula (áp dụng thống nhất cho mọi mức similarity):**
 ```python
 combined_score = (
-    0.15 * distance_score    +  # 15% - Không quá xa
-    0.30 * similarity_score  +  # 30% - Phù hợp
-    0.30 * rating_score      +  # 30% - Rating tốt
-    0.25 * bearing_score        # 25% - Hướng về user
-)
-```
-
-**Score Formula - Khi Similarity < 0.8:**
-```python
-combined_score = (
-    0.25 * distance_score    +  # 25% - Ưu tiên gần hơn
-    0.10 * similarity_score  +  # 10% - Giảm trọng số
-    0.40 * rating_score      +  # 40% - Ưu tiên rating
-    0.25 * bearing_score        # 25% - Hướng về user
+    0.40 * distance_score    +  # 40% - Không đi quá xa
+    0.10 * similarity_score  +  # 10% - Phù hợp nhu cầu
+    0.25 * rating_score      +  # 25% - Rating tốt
+    0.25 * bearing_score        # 25% - Hướng về user (tạo vòng cung)
 )
 ```
 
@@ -351,18 +309,45 @@ Ví dụ:
 
 **Quy Tắc Xen Kẽ Category:**
 ```python
-Ví dụ có 3 categories: [Cafe, Restaurant, Culture]
+# Không được chọn 2 POI liên tiếp cùng category
+Ví dụ: [Cafe & Bakery, Restaurant, Culture]
 
-Category sequence: [Cafe, Restaurant, Cafe, Culture, Cafe]
-                     ✅     ✅        ✅     ✅      ✅
-# Không lặp liên tiếp
-
-Category sequence: [Cafe, Cafe, Restaurant, Culture, Cafe]
-                     ✅     ❌  # KHÔNG HỢP LỆ - Cafe lặp
+✅ Hợp lệ:   Cafe & Bakery → Culture → Restaurant → Culture → Cafe & Bakery
+❌ Không hợp lệ: Cafe & Bakery → Cafe & Bakery → Culture  (lặp Cafe liên tiếp)
 
 Ngoại lệ:
-- Nếu hết POI của category khác → Được phép lặp
-- Meal time Restaurant → Chèn đúng vào thời gian ăn (không theo quy tắc xen kẽ)
+- Hết POI category khác trong pool → Được phép lặp
+- Restaurant (meal-time) → Chèn ưu tiên, không bị xen kẽ chặn
+- Cafe (cafe-counter) → Chèn ưu tiên khi counter >= 2, không bị xen kẽ chặn
+```
+
+**Cafe-Counter Logic (chỉ áp dụng khi KHÔNG có Food & Local Flavours):**
+```python
+cafe_counter = 0
+
+Sau mỗi POI được chọn:
+  if category in ["Cafe", "Restaurant"]:
+      cafe_counter = 0        # Reset
+  else:
+      cafe_counter += 1       # Tăng
+      if cafe_counter >= 2:
+          required_category = "Cafe"   # Trigger chèn Cafe
+          cafe_counter = 0             # Reset
+
+# Ưu tiên: Meal-Time > Cafe-Counter > Alternation thường
+# Nếu cả Cafe-Counter trigger VÀ đang trong meal window → ưu tiên Restaurant trước
+```
+
+**Ví dụ chuỗi (Culture, khởi đầu 10:00):**
+```
+POI 1: Culture    → counter = 1
+POI 2: Restaurant ← LUNCH (reset) → counter = 0
+POI 3: Culture    → counter = 1
+POI 4: Culture    → counter = 2  → CHÈN Cafe
+POI 5: Cafe       → counter = 0
+POI 6: Culture    → counter = 1
+POI 7: Nature     → counter = 2  → CHÈN Cafe
+POI 8: Cafe       → counter = 0
 ```
 
 ---
@@ -392,9 +377,9 @@ Ngoại lệ:
 **Score Formula:**
 ```python
 combined_score = (
-    0.4 * distance_score    +  # 40% - Ưu tiên gần user
-    0.3 * similarity_score  +  # 30% - Vẫn phù hợp nhu cầu
-    0.3 * rating_score         # 30% - Rating tốt
+    0.6  * distance_score    +  # 60% - Ưu tiên gần user tuyệt đối
+    0.1  * similarity_score  +  # 10% - Vẫn phù hợp nhu cầu
+    0.3  * rating_score         # 30% - Rating tốt
 )
 ```
 
@@ -408,234 +393,206 @@ POI A: Cafe, 0.8km từ user, similarity 0.75, rating 3.8
 → distance_score = 0.92
 → similarity_score = 0.75
 → rating_score = 0.76
-→ combined = 0.4*0.92 + 0.3*0.75 + 0.3*0.76 = 0.821
+→ combined = 0.6*0.92 + 0.1*0.75 + 0.3*0.76 = 0.855
 
 POI B: Restaurant, 1.5km từ user, similarity 0.88, rating 4.5
 → distance_score = 0.85
 → similarity_score = 0.88
-→ rating_score = 0.9
-→ combined = 0.4*0.85 + 0.3*0.88 + 0.3*0.9 = 0.874
+→ rating_score = 0.90
+→ combined = 0.6*0.85 + 0.1*0.88 + 0.3*0.90 = 0.868
 
-→ Chọn POI B (gần user, rating cao hơn)
+→ Chọn POI B (score cao hơn nhờ rating tốt hơn)
 ```
 
 ---
 
 ## 💼 Các Trường Hợp Sử Dụng
 
-### Case 1: Du Lịch Ẩm Thực Đơn Giản
+### Case 1: Chỉ Food & Local Flavours (không có meal-time)
 ```json
 {
   "semantic_query": "Food & Local Flavours",
   "transportation_mode": "WALKING",
+  "current_time": "2026-03-05T09:00:00",
   "max_time_minutes": 180,
   "target_places": 5
 }
 ```
 
 **Kết quả:**
-- 1 routes
-- Route có 5 POI xen kẽ Cafe & Restaurant
-- Thời gian: ~3 giờ
-- Không lọc opening hours (không có current_time)
+- Pool: `[Cafe & Bakery, Restaurant]`
+- Meal-time: ❌ Không có
+- Cafe-counter: ❌ Không áp dụng
+- Alternation: `Cafe & Bakery → Restaurant → Cafe & Bakery → ...`
+
+**Route:**
+```
+09:00 - 09:30  [Cafe & Bakery 1] Cafe Giảng Trứng         ★4.6
+09:38 - 10:28  [Restaurant 1]   Bún Chả Hương Liên        ★4.6
+10:36 - 11:01  [Cafe & Bakery 2] Cộng Cà Phê              ★4.4
+11:08 - 11:58  [Restaurant 2]   Phở Thìn Lò Đúc           ★4.7
+12:06 - 12:26  [Cafe & Bakery 3] The Note Coffee ← cuối   ★4.5
+Kết thúc 12:26 | Tổng: ~146 phút ✅
+```
 
 ---
 
-### Case 2: Du Lịch Ẩm Thực + Văn Hóa
+### Case 2: Chỉ Culture & Heritage — Có Meal-Time + Cafe-Counter
 ```json
 {
-  "semantic_query": "Food & Local Flavours",
-  "customer_like": true,
-  "current_time": "2026-01-16T08:00:00",
+  "semantic_query": "Culture & Heritage",
+  "transportation_mode": "WALKING",
+  "current_time": "2026-03-05T10:00:00",
+  "max_time_minutes": 300,
+  "target_places": 7
+}
+```
+
+**Kết quả:**
+- Pool: `[Culture & heritage]`
+- Meal-time: ✅ Lunch window 12:00–15:00 overlap → chèn Restaurant
+- Cafe-counter: ✅ Chèn Cafe sau mỗi 2 POI Culture
+
+**Route:**
+```
+10:00 - 10:45  [Culture 1] Văn Miếu Quốc Tử Giám     ★4.7  → counter=1
+10:53 - 11:28  [Culture 2] Bảo Tàng Phụ Nữ VN        ★4.5  → counter=2 → CHÈN Cafe
+11:35 - 12:00  [Cafe]      Tranquil Books & Coffee    ★4.3  → counter=0 (RESET)
+12:07 - 12:57  [Restaurant] Phở Thìn ← LUNCH         ★4.7  → counter=0 (RESET)
+13:06 - 13:36  [Culture 3] Nhà Hỏa Lò                ★4.3  → counter=1
+13:43 - 14:13  [Culture 4] Đền Ngọc Sơn              ★4.6  → counter=2 → CHÈN Cafe
+14:20 - 14:40  [Cafe]      Cafe Đình ← cuối          ★4.4  → counter=0
+Kết thúc 14:40 | Tổng: ~280 phút ✅
+```
+
+---
+
+### Case 3: Food & Local Flavours + Culture & Heritage (có Food, không meal-time)
+```json
+{
+  "semantic_query": "Food & Local Flavours, Culture & Heritage",
+  "transportation_mode": "WALKING",
+  "current_time": "2026-03-05T08:00:00",
   "max_time_minutes": 360,
   "target_places": 7
 }
 ```
 
 **Kết quả:**
-- Expand thành: `[Cafe & Bakery, Restaurant, Culture & heritage]`
-- routes, mỗi route n POI
-- Xen kẽ 3 loại category
-- Lọc POI đang mở cửa lúc 8:00 sáng
-- Thời gian: ~6 giờ
+- Pool: `[Cafe & Bakery, Restaurant, Culture & heritage]`
+- Meal-time: ❌ Không có (do có Food)
+- Cafe-counter: ❌ Không áp dụng
+- Alternation: `Cafe & Bakery → Culture → Restaurant → Culture → Cafe & Bakery → ...`
 
----
-
-### Case 3: Du Lịch Buổi Trưa (Meal Time Auto-Insert)
-```json
-{
-  "semantic_query": "Culture & heritage",
-  "current_time": "2026-01-16T10:00:00",
-  "max_time_minutes": 240,
-  "target_places": 6
-}
+**Route:**
 ```
-
-**Kết quả:**
-- Phát hiện overlap với lunch time (11:30-13:30)
-- Auto expand: `[Culture & heritage, Restaurant]`
-- Route sẽ có Restaurant chèn vào khoảng 12:00-13:00
-- Thời gian: ~4 giờ
-
-**Ví dụ Route:**
-```
-Start: 10:00
-├─ 10:00-10:20: Di chuyển đến POI 1
-├─ 10:20-10:50: Culture POI 1 (30 phút)
-├─ 10:50-11:05: Di chuyển đến POI 2
-├─ 11:05-11:35: Culture POI 2 (30 phút)
-├─ 11:35-12:00: Di chuyển đến Restaurant
-├─ 12:00-12:50: Restaurant ← Meal time
-├─ 12:50-13:10: Di chuyển đến POI 4
-├─ 13:10-13:40: Culture POI 4 (30 phút)
-└─ Finish: ~14:00
+08:00 - 08:30  [Cafe & Bakery 1] Cafe Giang Trứng         ★4.6
+08:38 - 09:23  [Culture 1]      Văn Miếu                  ★4.7
+09:30 - 10:20  [Restaurant 1]   Bún Chả Hương Liên        ★4.6
+10:28 - 11:13  [Culture 2]      Bảo Tàng Lịch Sử          ★4.5
+11:21 - 11:46  [Cafe & Bakery 2] Cộng Cà Phê              ★4.4
+11:53 - 12:23  [Culture 3]      Nhà Hỏa Lò                ★4.3
+12:30 - 12:55  [Cafe & Bakery 3] The Note Coffee ← cuối   ★4.5
+Kết thúc 12:55 | Tổng: ~295 phút ✅
 ```
 
 ---
 
-### Case 4: Du Lịch Nhiều Loại
+### Case 4: Culture & Heritage + Nature & Scenery (không Food, có meal-time + cafe-counter)
 ```json
 {
-  "semantic_query": "Food & Local Flavours, Nature & View, Shopping",
-  "transportation_mode": "DRIVING",
-  "max_time_minutes": 480,
+  "semantic_query": "Culture & Heritage, Nature & Scenery",
+  "transportation_mode": "WALKING",
+  "current_time": "2026-03-05T09:00:00",
+  "max_time_minutes": 360,
   "target_places": 8
 }
 ```
 
 **Kết quả:**
-- Expand: `[Cafe & Bakery, Restaurant, Nature & View, Shopping]`
-- 4 categories
-- Mỗi route n POI xen kẽ 4 loại
-- Driving speed (40 km/h) → Có thể đi xa hơn
+- Pool: `[Culture & heritage, Nature & View]`
+- Meal-time: ✅ Lunch 12:00–15:00 overlap
+- Cafe-counter: ✅ Chèn Cafe sau mỗi 2 POI
+- Alternation: `Culture → Nature → Culture → Nature → ...`
+
+**Route:**
+```
+09:00 - 09:45  [Culture 1] Văn Miếu                   ★4.7  → counter=1
+09:53 - 10:33  [Nature 1]  Hồ Tây                      ★4.5  → counter=2 → CHÈN Cafe
+10:41 - 11:01  [Cafe]      Loading T                   ★4.2  → counter=0 (RESET)
+11:08 - 11:43  [Culture 2] Bảo Tàng Phụ Nữ            ★4.5  → counter=1
+11:50 - 12:30  [Nature 2]  Vườn Bách Thảo              ★4.2  → counter=2 → TRIGGER Cafe
+               Nhưng next arrival ~12:37 → trong meal window → ưu tiên Restaurant
+12:37 - 13:27  [Restaurant] Bún Bò Nam Bộ ← LUNCH     ★4.4  → counter=0 (RESET)
+13:35 - 14:05  [Culture 3] Nhà Hỏa Lò                 ★4.3  → counter=1
+14:12 - 14:37  [Nature 3]  Hồ Hoàn Kiếm ← cuối        ★4.8
+Kết thúc 14:37 | Tổng: ~337 phút ✅
+```
 
 ---
 
-## 🗄️ Quản Lý Cache & Replace Route
-
-### Cache Structure
+### Case 5: 3 Interests — Food + Culture + Nature (không meal-time)
 ```json
 {
-  "user_id": "816d05bf-5b65-49d2-9087-77c4c83be655",
+  "semantic_query": "Food & Local Flavours, Culture & Heritage, Nature & Scenery",
   "transportation_mode": "WALKING",
-  "routes": {
-    "1": {
-      "pois": [
-        {"poi_id": "abc...", "category": "Cafe & Bakery"},
-        {"poi_id": "def...", "category": "Restaurant"},
-        ...
-      ]
-    },
-    "2": {...},
-    "3": {...}
-  },
-  "available_pois_by_category": {
-    "Cafe & Bakery": ["id1", "id2", "id3", ...],
-    "Restaurant": ["id4", "id5", ...],
-    ...
-  },
-  "replaced_pois_by_category": {
-    "Restaurant": ["id_old1", "id_old2"]
-  }
+  "current_time": "2026-03-05T08:00:00",
+  "max_time_minutes": 540,
+  "target_places": 9
 }
 ```
 
-### Delete Cache
-```json
-{
-  "delete_cache": true,
-  "...other params..."
-}
+**Kết quả:**
+- Pool: `[Cafe & Bakery, Restaurant, Culture & heritage, Nature & View]`
+- Meal-time: ❌ Không có (có Food)
+- Cafe-counter: ❌ Không áp dụng
+
+**Route:**
 ```
-
-**Hành vi:**
-1. Xóa cache của user
-2. Tiếp tục build routes từ đầu
-3. Trả về 3 routes mới
-
----
-
-### Replace Route
-```json
-{
-  "replace_route": 1,
-  "...other params..."
-}
-```
-
-**Hành vi:**
-1. Kiểm tra route 1 có tồn tại trong cache
-2. Gọi `build_routes` với `max_routes = 2` (tạo routes 1, 2)
-3. Lấy route 2 từ kết quả
-4. **Xóa route 1** khỏi cache
-5. **Chỉ lưu route 2** (tiết kiệm bộ nhớ)
-6. Trả về route 2
-
-**Logic tiết kiệm bộ nhớ:**
-```
-replace_route = 1 → Build route 2, xóa route 1, chỉ lưu route 2
-replace_route = 2 → Build route 3, xóa route 2, chỉ lưu route 3
-replace_route = 3 → Build route 4, xóa route 3, chỉ lưu route 4
-...
+08:00 - 08:30  [Cafe & Bakery 1] Cafe Giang Trứng         ★4.6
+08:38 - 09:23  [Culture 1]      Văn Miếu                  ★4.7
+09:31 - 10:11  [Nature 1]       Hồ Tây                    ★4.5
+10:19 - 11:09  [Restaurant 1]   Phở Thìn                  ★4.7
+11:17 - 11:42  [Cafe & Bakery 2] Tranquil Books            ★4.3
+11:49 - 12:34  [Culture 2]      Bảo Tàng Lịch Sử          ★4.5
+12:42 - 13:22  [Nature 2]       Vườn Bách Thảo             ★4.2
+13:30 - 14:20  [Restaurant 2]   Bún Chả Hương Liên        ★4.6
+14:28 - 14:53  [Cafe & Bakery 3] Cộng Cà Phê ← cuối       ★4.4
+Kết thúc 14:53 | Tổng: ~413 phút ✅
 ```
 
 ---
 
-## 📊 Thống Kê & Metrics
-
-### Response Time Breakdown
+### Case 6: 3 Interests — Culture + Nature + Adventure (không Food, có meal-time + cafe-counter)
 ```json
 {
-  "total_execution_time_seconds": 2.456,
-  "timing_breakdown": {
-    "spatial_search_seconds": 0.123,
-    "embedding_seconds": 0.234,
-    "qdrant_search_seconds": 0.345,
-    "db_query_seconds": 0.156,
-    "route_building_seconds": 1.598
-  }
+  "semantic_query": "Culture & Heritage, Nature & Scenery, Adventure & Leisure",
+  "transportation_mode": "WALKING",
+  "current_time": "2026-03-05T08:30:00",
+  "max_time_minutes": 480,
+  "target_places": 9
 }
 ```
 
-### Route Metrics
-```json
-{
-  "route_id": 1,
-  "total_time_minutes": 215,
-  "travel_time_minutes": 65,
-  "stay_time_minutes": 150,
-  "total_score": 4.3,
-  "avg_score": 0.86,
-  "efficiency": 2.0,  // total_score / (total_time_minutes / 100)
-  "places": [...]
-}
+**Kết quả:**
+- Pool: `[Culture & heritage, Nature & View, Adventure & Leisure]`
+- Meal-time: ✅ Lunch 12:00–15:00 overlap
+- Cafe-counter: ✅ Chèn Cafe sau mỗi 2 POI
+
+**Route:**
 ```
-
----
-
-## 🔧 Best Practices
-
-### 1. Lựa Chọn Transportation Mode
-- **WALKING** (5 km/h): Khu phố cổ, khoảng cách ngắn (<5km)
-- **BICYCLING** (15 km/h): Du lịch trung bình (5-15km)
-- **DRIVING** (40 km/h): Du lịch xa, nhiều điểm (>15km)
-
-### 2. Thiết Lập Thời Gian
-- **Buổi sáng** (3-4h): `max_time_minutes: 180-240`
-- **Cả ngày** (6-8h): `max_time_minutes: 360-480`
-- **Cuối tuần** (8-10h): `max_time_minutes: 480-600`
-
-### 3. Số Lượng POI
-- **Ngắn ngày**: `target_places: 3-5`
-- **Trung bình**: `target_places: 5-7`
-- **Cả ngày**: `target_places: 7-10`
-
-### 4. Sử Dụng Current Time
-- ✅ **Nên dùng** nếu muốn lọc POI đang mở cửa
-- ✅ **Nên dùng** để kích hoạt meal time auto-insert
-- ❌ **Không dùng** nếu chỉ cần gợi ý tổng quát
-
----
+08:30 - 09:15  [Culture 1]    Văn Miếu                   ★4.7  → counter=1
+09:23 - 10:03  [Nature 1]     Hồ Tây                     ★4.5  → counter=2 → CHÈN Cafe
+10:11 - 10:31  [Cafe]         Cafe Đình                  ★4.4  → counter=0 (RESET)
+10:38 - 11:38  [Adventure 1]  Paddle Boarding Hồ Tây     ★4.3  → counter=1
+11:46 - 12:26  [Culture 2]    Bảo Tàng Lịch Sử           ★4.5  → counter=2 → TRIGGER Cafe
+               next arrival ~12:35 → trong meal window → ưu tiên Restaurant trước
+12:35 - 13:25  [Restaurant]   Phở Thìn ← LUNCH           ★4.7  → counter=0 (RESET)
+13:33 - 14:13  [Nature 2]     Vườn Bách Thảo              ★4.2  → counter=1
+14:21 - 15:21  [Adventure 2]  Escape Game Hà Nội         ★4.5  → counter=2 → CHÈN Cafe
+15:29 - 15:49  [Cafe]         Tranquil Books ← cuối       ★4.3  → counter=0
+Kết thúc 15:49 | Tổng: ~439 phút ✅
+```
 
 ## 📞 Support & Contact
 
@@ -643,4 +600,4 @@ Nếu có thắc mắc về API, vui lòng liên hệ team phát triển.
 
 ---
 
-**Last Updated:** January 16, 2026
+**Last Updated:** March 5, 2026
