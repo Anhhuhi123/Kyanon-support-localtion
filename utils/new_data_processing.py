@@ -67,6 +67,7 @@ def new_process_poi_for_description(poi_row: Dict) -> Dict[str, Any]:
     }
     # Read metadata from the input row, metadata may be a dict, a JSON string, or Non
     metadata = poi_row.get("metadata")
+
     # If metadata is a string, attempt to parse it as JSON
     if isinstance(metadata, str):
         try:
@@ -75,14 +76,20 @@ def new_process_poi_for_description(poi_row: Dict) -> Dict[str, Any]:
             metadata = {}
     elif not isinstance(metadata, dict):
         metadata = {}
+        
+    # ---- Extract additionalInfo ----
+    additional_info = metadata.get("additionalInfo", {})
+
+    if not isinstance(additional_info, dict):
+        additional_info = {}
     
-    result["crowd"] = ", ".join(extract_true_keys(metadata.get("Crowd")))
-    result["offerings"] = ", ".join(extract_true_keys(metadata.get("Offerings")))
-    result["atmosphere"] = ", ".join(extract_true_keys(metadata.get("Atmosphere")))
-    result["highlights"] = ", ".join(extract_true_keys(metadata.get("Highlights")))
-    result["dining_options"] = ", ".join(extract_true_keys(metadata.get("Dining options")))
-    result["children"] = ", ".join(extract_true_keys(metadata.get("Children")))
-    result["accessibility"] = ", ".join(extract_true_keys(metadata.get("Accessibility")))
-    result["popular_for"] = ", ".join(extract_true_keys(metadata.get("Popular for")))
+    result["crowd"] = ", ".join(extract_true_keys(additional_info.get("Crowd")))
+    result["offerings"] = ", ".join(extract_true_keys(additional_info.get("Offerings")))
+    result["atmosphere"] = ", ".join(extract_true_keys(additional_info.get("Atmosphere")))
+    result["highlights"] = ", ".join(extract_true_keys(additional_info.get("Highlights")))
+    result["dining_options"] = ", ".join(extract_true_keys(additional_info.get("Dining options")))
+    result["children"] = ", ".join(extract_true_keys(additional_info.get("Children")))
+    result["accessibility"] = ", ".join(extract_true_keys(additional_info.get("Accessibility")))
+    result["popular_for"] = ", ".join(extract_true_keys(additional_info.get("Popular for")))
     
     return result

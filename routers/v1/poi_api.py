@@ -168,3 +168,19 @@ async def new_sync_pois(payload: PoiRequest) -> dict:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    
+
+# @router.post("/update-qdrant")
+# async def update_qdrant():
+#     try: 
+#         # Ingest toàn bộ PoiClean vào Qdrant
+#         result_qdrant = await ingest_qdrant_service.ingest_all_poi()
+          
+#         return {
+#             "result_qdrant": result_qdrant
+#         }
+
+#     except HTTPException:
+#         raise
+#     except Exception as e:
+#         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
