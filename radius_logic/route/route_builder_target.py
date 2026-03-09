@@ -424,6 +424,16 @@ class TargetRouteBuilder(BaseRouteBuilder):
         last_added_place = places[route[-1]] if route else None
         
         for i, place in enumerate(places):
+
+            travel_time = self.calculator.calculate_travel_time(
+                distance_matrix[current_pos][i + 1],
+                transportation_mode
+            )
+            # validate for travl_time > 10 
+            if travel_time > 10 and transportation_mode == "WALKING":  
+                print(f"Travel time {travel_time} phút quá lớn → BỎ QUA {place.get('name')}")
+                continue
+
             if i in visited:
                 continue
             
@@ -500,6 +510,16 @@ class TargetRouteBuilder(BaseRouteBuilder):
         # Nếu không tìm thấy với category yêu cầu, bỏ qua category constraint và tìm lại
         if not candidates and required_category:
             for i, place in enumerate(places):
+
+                travel_time = self.calculator.calculate_travel_time(
+                    distance_matrix[current_pos][i + 1],
+                    transportation_mode
+                )
+                # validate for travl_time > 10 
+                if travel_time > 10 and transportation_mode == "WALKING":  
+                    print(f"Travel time {travel_time} phút quá lớn → BỎ QUA {place.get('name')}")
+                    continue
+
                 if i in visited:
                     continue
                 

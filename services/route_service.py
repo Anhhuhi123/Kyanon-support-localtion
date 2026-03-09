@@ -105,6 +105,7 @@ class RouteService:
         latitude: float,
         longitude: float,
         transportation_mode: str,
+        transportation_type: str,
         semantic_query: str,
         user_id: Optional[UUID] = None,
         max_time_minutes: int = 180,
@@ -120,7 +121,7 @@ class RouteService:
         Tìm kiếm kết hợp + Xây dựng lộ trình với tùy chọn lọc theo thời gian mở cửa
         """
         return await self.route_service.build_routes(
-            latitude, longitude, transportation_mode, semantic_query, user_id,
+            latitude, longitude, transportation_mode, transportation_type, semantic_query, user_id,
             max_time_minutes, target_places, max_routes, top_k_semantic,
             customer_like, current_datetime, duration_mode
         )
@@ -132,6 +133,7 @@ class RouteService:
         latitude: float,
         longitude: float,
         transportation_mode: str,
+        transportation_type: str,
         semantic_query: str,
         max_time_minutes: int = 180,
         target_places: int = 5,
@@ -146,7 +148,7 @@ class RouteService:
         """
         return await self.route_service.replace_route(
             user_id, route_id_to_replace, latitude, longitude,
-            transportation_mode, semantic_query, max_time_minutes,
+            transportation_mode, transportation_type, semantic_query, max_time_minutes,
             target_places, top_k_semantic, customer_like,
             current_datetime, duration_mode
         )

@@ -206,6 +206,10 @@ class BaseRouteBuilder:
                     distance_matrix[0][i + 1],
                     transportation_mode
                 )
+                # validate for travl_time > 10
+                if travel_time > 10 and transportation_mode == "WALKING":  
+                    print(f"Travel time {travel_time} phút quá lớn → BỎ QUA {place.get('name')}")
+                    continue
                 arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
                 if not self.validator.is_poi_available_at_time(place, arrival_time):
                     continue
@@ -367,6 +371,15 @@ class BaseRouteBuilder:
             
             for i, place in enumerate(places):
                 reasons = []
+
+                travel_time = self.calculator.calculate_travel_time(
+                    distance_matrix[current_pos][i + 1],
+                    transportation_mode
+                )
+                # validate for travl_time > 10 
+                if travel_time > 10 and transportation_mode == "WALKING":  
+                    print(f"Travel time {travel_time} phút quá lớn → BỎ QUA {place.get('name')}")
+                    continue
                 
                 if i in visited:
                     reasons.append("visited")
@@ -561,7 +574,11 @@ class BaseRouteBuilder:
         
         total_score = sum(places[idx]["score"] for idx in route)
         total_time = total_travel_time + total_stay_time
-        
+
+        # import json
+        # with open("result1.json", "w", encoding="utf-8") as f:
+        #     json.dump(route_places, f, ensure_ascii=False, indent=4)
+
         return {
             "route": route,
             "total_time_minutes": round(total_time, 1),

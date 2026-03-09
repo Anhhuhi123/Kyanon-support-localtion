@@ -12,6 +12,7 @@ from services.poi_search import PoiSearch
 from services.poi_service import PoiService
 from utils.time_utils import TimeUtils
 from uuid import UUID
+from utils.travel_type import TravelTypeFilter
 
 class SpatialSearch(QdrantSearch):
     """Service kết hợp spatial + semantic search"""
@@ -144,6 +145,7 @@ class SpatialSearch(QdrantSearch):
         latitude: float,
         longitude: float,
         transportation_mode: str,
+        transportation_type: str,
         semantic_query: str,
         user_id: Optional[UUID] = None,
         top_k_semantic: int = 10,
@@ -248,6 +250,14 @@ class SpatialSearch(QdrantSearch):
                     },
                     "results": []
                 }
+
+            # Hàm lọc Poi theo travel_type
+            id_list = TravelTypeFilter.filter_pois_by_travel_type(
+                spatial_results["results"], 
+                transportation_type, 
+                50
+            )
+
             if user_id:
                 # get_visited_pois_by_user (ASYNC)
                 visited_poi_ids = await self.poi_service.get_visited_pois_by_user(user_id) or []

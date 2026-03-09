@@ -134,6 +134,7 @@ class DurationRouteBuilder(BaseRouteBuilder):
         if distance_matrix is None:
             distance_matrix = self.geo.build_distance_matrix(user_location, places)
         
+
         if max_distance is None:
             max_distance = max(max(row) for row in distance_matrix)
         
@@ -196,6 +197,7 @@ class DurationRouteBuilder(BaseRouteBuilder):
             distance_matrix[0][best_first + 1],
             transportation_mode
         )
+        print("travel_time user → POI đầu:", travel_time, "phút")
         stay_time = self.calculator.get_stay_time(
             places[best_first].get("poi_type", ""),
             places[best_first].get("stay_time")
@@ -393,6 +395,11 @@ class DurationRouteBuilder(BaseRouteBuilder):
         # BƯỚC 9: Format kết quả trả về client
         # ============================================================
         # Bổ sung thông tin: travel_time, stay_time, combined_score cho mỗi POI
+        # import json
+        # with open("result_places.json", "w", encoding="utf-8") as f:
+        #     json.dump(places, f, ensure_ascii=False, indent=4)
+        # with open("result_route.json", "w", encoding="utf-8") as f:
+        #     json.dump(route, f, ensure_ascii=False, indent=4)
         return self.format_route_result(
             route, places, distance_matrix, transportation_mode,
             max_distance, total_travel_time, total_stay_time
@@ -546,6 +553,16 @@ class DurationRouteBuilder(BaseRouteBuilder):
         last_added_place = places[route[-1]] if route else None
         
         for i, place in enumerate(places):
+
+            travel_time = self.calculator.calculate_travel_time(
+                distance_matrix[current_pos][i + 1],
+                transportation_mode
+            )
+            # validate for travl_time > 10 
+            if travel_time > 10 and transportation_mode == "WALKING":  
+                print(f"Travel time {travel_time} phút quá lớn → BỎ QUA {place.get('name')}")
+                continue
+
             # --- Filter 1: Bỏ POI đã dùng ---
             if i in visited:
                 continue
@@ -655,6 +672,17 @@ class DurationRouteBuilder(BaseRouteBuilder):
         # Bỏ constraint category và tìm lại (vẫn tôn trọng exclude_restaurant và các filter khác)
         if not candidates and required_category:
             for i, place in enumerate(places):
+
+                travel_time = self.calculator.calculate_travel_time(
+                    distance_matrix[current_pos][i + 1],
+                    transportation_mode
+                )
+                # validate for travl_time > 8 
+                if travel_time > 10 and transportation_mode == "WALKING":  
+                    print(f"Travel time {travel_time} phút quá lớn → BỎ QUA {place.get('name')}")
+                    continue
+
+                
                 if i in visited:
                     continue
                 

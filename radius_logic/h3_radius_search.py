@@ -11,6 +11,7 @@ from typing import List, Dict, Any, Tuple, Set, Optional
 from config.config import Config
 from utils.time_utils import TimeUtils
 from .route.route_config import RouteConfig
+import json
 
 class H3RadiusSearch:
     """
@@ -208,7 +209,8 @@ class H3RadiusSearch:
                         open_hours,
                         poi_type_clean,
                         main_subcategory,
-                        specialization
+                        specialization,
+                        travel_type
                     FROM public."PoiClean"
                     WHERE lat BETWEEN $1 AND $2
                       AND lon BETWEEN $3 AND $4
@@ -227,6 +229,17 @@ class H3RadiusSearch:
                 
                 for row in rows:
                     stay_time = row['stay_time'] if row['stay_time'] is not None else RouteConfig.DEFAULT_STAY_TIME
+
+                    # Parse travel_type từ JSON string sang dict
+                    travel_type_raw = row['travel_type']
+                    if isinstance(travel_type_raw, str):
+                        try:
+                            travel_type = json.loads(travel_type_raw)
+                        except (json.JSONDecodeError, TypeError):
+                            travel_type = None
+                    else:
+                        travel_type = travel_type_raw
+
                     poi = {
                         "id": str(row['id']),  # Convert UUID to string for JSON serialization
                         "name": row['name'],
@@ -239,7 +252,8 @@ class H3RadiusSearch:
                         "lon": row['lon'],
                         "rating": round(float(row['rating'] or 0.5), 3),
                         "stay_time": float(stay_time),
-                        "open_hours": TimeUtils.normalize_open_hours(row['open_hours'])
+                        "open_hours": TimeUtils.normalize_open_hours(row['open_hours']),
+                        "travel_type": travel_type
                     }
                     
                     # Tính H3 cell mà POI này thuộc về
@@ -266,7 +280,7 @@ class H3RadiusSearch:
                     
                     print(f"  📊 Distribution: {cells_with_pois}/{len(h3_indices)} cells have POIs, total {distributed_count} POIs")
                     print(f"  💾 Cached {cached_count} cells with POIs")
-                
+                    
                 return result
                 
             except Exception as e:
