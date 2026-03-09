@@ -163,7 +163,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
             distance_matrix[0][best_first + 1],
             transportation_mode
         )
-        stay_time = self.calculator.get_stay_time(
+        stay_time = self.calculator.get_stay_time_reduction(
             places[best_first].get("poi_type", ""),
             places[best_first].get("stay_time")
         )
@@ -255,7 +255,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 distance_matrix[current_pos][poi_idx + 1],
                 transportation_mode
             )
-            stay_time = self.calculator.get_stay_time(
+            stay_time = self.calculator.get_stay_time_reduction(
                 places[poi_idx].get("poi_type", ""),
                 places[poi_idx].get("stay_time")
             )
@@ -292,7 +292,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 distance_matrix[current_pos][best_last + 1],
                 transportation_mode
             )
-            stay_time = self.calculator.get_stay_time(
+            stay_time = self.calculator.get_stay_time_reduction(
                 places[best_last].get("poi_type", ""),
                 places[best_last].get("stay_time")
             )
@@ -430,7 +430,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 transportation_mode
             )
             # validate for travl_time > 10 
-            if travel_time > 10 and transportation_mode == "WALKING":  
+            if travel_time > 15 and transportation_mode == "WALKING":  
                 print(f"Travel time {travel_time} phút quá lớn → BỎ QUA {place.get('name')}")
                 continue
 
@@ -472,7 +472,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 distance_matrix[current_pos][i + 1],
                 transportation_mode
             )
-            temp_stay = total_stay_time + self.calculator.get_stay_time(
+            temp_stay = total_stay_time + self.calculator.get_stay_time_reduction(
                 places[i].get("poi_type", ""),
                 places[i].get("stay_time")
             )
@@ -515,8 +515,8 @@ class TargetRouteBuilder(BaseRouteBuilder):
                     distance_matrix[current_pos][i + 1],
                     transportation_mode
                 )
-                # validate for travl_time > 10 
-                if travel_time > 10 and transportation_mode == "WALKING":  
+                # validate for travl_time > 15 
+                if travel_time > 15 and transportation_mode == "WALKING":  
                     print(f"Travel time {travel_time} phút quá lớn → BỎ QUA {place.get('name')}")
                     continue
 
@@ -554,7 +554,7 @@ class TargetRouteBuilder(BaseRouteBuilder):
                     distance_matrix[current_pos][i + 1],
                     transportation_mode
                 )
-                temp_stay = total_stay_time + self.calculator.get_stay_time(
+                temp_stay = total_stay_time + self.calculator.get_stay_time_reduction(
                     places[i].get("poi_type", ""),
                     places[i].get("stay_time")
                 )

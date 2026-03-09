@@ -84,120 +84,220 @@ class RouteBuilder:
         distance_matrix = self.geo.build_distance_matrix(user_location, places)
         max_distance = max(max(row) for row in distance_matrix)
         
-        # Xây dựng route đầu tiên - KHÔNG chỉ định first_place_idx
-        # Để logic trong build_route tự động chọn dựa trên meal time
-        if duration_mode:
-            route_1 = self.duration_builder.build_route(
-                user_location=user_location,
+        # ================================================================
+        # Xây dựng route đầu tiên với fallback logic:
+        #   Vòng lặp ngoài: nếu cả 5 lần thử đều cho route < 3 POI
+        #                   → giảm stay_time 10 phút (qua stay_time_reduction)
+        #                     và thử lại từ đầu (tối đa giảm 60 phút)
+        #   Vòng lặp trong: thử tối đa 5 first_place_idx khác nhau
+        #                   được chọn bởi select_first_poi (đúng logic meal/cafe/opening)
+        #   Route hợp lệ: phải có >= 3 POI
+        # ================================================================
+        _MIN_POI        = 3
+        _MAX_ATTEMPTS   = 5
+        _REDUCTION_STEP = 10  # Giảm stay_time mỗi vòng (phút)
+        _MAX_REDUCTION  = 60  # Giảm tối đa 60 phút (6 vòng)
+
+        # Xây dựng danh sách 5 POI xuất phát hợp lệ THEO ĐÚNG LOGIC của select_first_poi:
+        # (meal-time filter, cafe-sequence exclusion, opening hours validation...)
+        # Cách làm: gọi select_first_poi 5 lần, mỗi lần loại trừ các index đã chọn trước
+        # → khác với cách cũ [None, 0, 1, 2, 3] chỉ sort theo score thuần túy
+        _builder_ref = self.duration_builder if duration_mode else self.target_builder
+        _meal_info = _builder_ref.analyze_meal_requirements(
+            places, current_datetime, max_time_minutes
+        )
+        _first_idx_list = []
+        _exclude: set = set()
+        for _ in range(_MAX_ATTEMPTS):
+            _idx, _ = _builder_ref.select_first_poi(
                 places=places,
-                transportation_mode=transportation_mode,
-                max_time_minutes=max_time_minutes,
-                first_place_idx=None,  # Để tự động chọn dựa trên meal logic
-                current_datetime=current_datetime,
+                first_place_idx=None,
                 distance_matrix=distance_matrix,
-                max_distance=max_distance
-            )
-        else:
-            route_1 = self.target_builder.build_route(
-                user_location=user_location,
-                places=places,
+                max_distance=max_distance,
                 transportation_mode=transportation_mode,
-                max_time_minutes=max_time_minutes,
-                target_places=target_places,
-                first_place_idx=None,  # Để tự động chọn dựa trên meal logic
                 current_datetime=current_datetime,
-                distance_matrix=distance_matrix,
-                max_distance=max_distance
+                should_insert_restaurant_for_meal=_meal_info["should_insert_restaurant_for_meal"],
+                meal_windows=_meal_info["meal_windows"],
+                should_insert_cafe=_meal_info.get("should_insert_cafe", False),
+                exclude_indices=_exclude
             )
-        
-        if route_1 is None:
+            if _idx is None:
+                break  # Không còn POI hợp lệ nào nữa
+            _first_idx_list.append(_idx)
+            _exclude.add(_idx)
+
+        if not _first_idx_list:
             return []
-        
-        all_routes = [route_1]
-        seen_place_sets = {tuple(sorted(route_1["route"]))}
-        
-        print(f"🎯 Route 1: {len(route_1['route'])} POI, total_score={route_1['total_score']:.2f}")
-        
-        # Nếu cần nhiều hơn 1 route, thử các POI xuất phát khác
-        # Tìm candidates từ POI chưa dùng trong route 1
-        if max_routes > 1:
-            used_first_poi = route_1["route"][0]  # POI đầu của route 1
-            
-            # Tìm các POI khác để làm điểm xuất phát cho route 2, 3
-            alternative_starts = []
-            for i, place in enumerate(places):
-                if i == used_first_poi:
-                    continue  # Bỏ qua POI đã dùng làm điểm đầu route 1
-                
-                # Validate opening hours
-                if current_datetime:
-                    travel_time = self.calculator.calculate_travel_time(
-                        distance_matrix[0][i + 1],
-                        transportation_mode
-                    )
-                    arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
-                    if not self.validator.is_poi_available_at_time(place, arrival_time):
-                        continue
-                
-                combined = self.calculator.calculate_combined_score(
-                    place_idx=i,
-                    current_pos=0,
-                    places=places,
-                    distance_matrix=distance_matrix,
-                    max_distance=max_distance,
-                    is_first=True
+
+        print(f"📋 Danh sách {len(_first_idx_list)} POI xuất phát (theo logic select_first_poi): {_first_idx_list}")
+
+        route_1        = None
+        _stay_reduction = 0.0
+
+        while _stay_reduction <= _MAX_REDUCTION:
+            # Thông báo khi đang chạy fallback (bỏ qua lần đầu stay_reduction=0)
+            self.calculator.stay_time_reduction = _stay_reduction
+            if _stay_reduction > 0:
+                print(
+                    f"\n🔄 FALLBACK: Giảm stay_time {_stay_reduction:.0f} phút, "
+                    f"thử lại tối đa {_MAX_ATTEMPTS} route..."
                 )
-                alternative_starts.append((i, combined))
-            
-            # Sort và thử từng điểm xuất phát
-            alternative_starts.sort(key=lambda x: (-x[1], x[0]))
-            
-            for first_idx, _ in alternative_starts:
-                if len(all_routes) >= max_routes:
-                    break
-                
+
+            for _attempt, _first_idx in enumerate(_first_idx_list):
+                print(
+                    f"  → Lần thử {_attempt + 1}/{_MAX_ATTEMPTS}: "
+                    f"first_place_idx={_first_idx}, "
+                    f"stay_reduction={_stay_reduction:.0f} phút"
+                )
                 if duration_mode:
-                    route_result = self.duration_builder.build_route(
+                    _candidate = self.duration_builder.build_route(
                         user_location=user_location,
                         places=places,
                         transportation_mode=transportation_mode,
                         max_time_minutes=max_time_minutes,
-                        first_place_idx=first_idx,  # Chỉ định POI đầu cho route 2, 3
+                        first_place_idx=_first_idx,
                         current_datetime=current_datetime,
                         distance_matrix=distance_matrix,
                         max_distance=max_distance
                     )
                 else:
-                    route_result = self.target_builder.build_route(
+                    _candidate = self.target_builder.build_route(
                         user_location=user_location,
                         places=places,
                         transportation_mode=transportation_mode,
                         max_time_minutes=max_time_minutes,
                         target_places=target_places,
-                        first_place_idx=first_idx,  # Chỉ định POI đầu cho route 2, 3
+                        first_place_idx=_first_idx,
                         current_datetime=current_datetime,
                         distance_matrix=distance_matrix,
                         max_distance=max_distance
                     )
-                
-                if route_result is None:
-                    continue
-                
-                place_set_key = tuple(sorted(route_result["route"]))
-                if place_set_key in seen_place_sets:
-                    continue
-                
-                # Kiểm tra khác ít nhất 2 POI so với tất cả routes trước
-                is_different_enough = all(
-                    len(set(route_result["route"]).symmetric_difference(set(r["route"]))) >= 2
-                    for r in all_routes
-                )
-                
-                if not is_different_enough:
-                    continue
-                
-                seen_place_sets.add(place_set_key)
-                all_routes.append(route_result)
+
+                if _candidate is not None and len(_candidate.get("places", [])) >= _MIN_POI:
+                    route_1 = _candidate
+                    print(
+                        f"  ✅ Route hợp lệ ({len(_candidate['places'])} POI) "
+                        f"tìm được ở lần thử {_attempt + 1} "
+                        f"(stay_reduction={_stay_reduction:.0f} phút)"
+                    )
+                    break  # Thoát vòng lặp trong, giữ stay_time_reduction hiện tại
+
+            if route_1 is not None:
+                break  # Đã có route hợp lệ, thoát vòng lặp ngoài
+
+            _best_count = 0  # chỉ để in log
+            print(
+                f"  ⚠️  Cả {_MAX_ATTEMPTS} lần thử đều không đủ {_MIN_POI} POI. "
+                f"Giảm stay_time thêm {_REDUCTION_STEP} phút và thử lại..."
+            )
+            _stay_reduction += _REDUCTION_STEP
+
+        if route_1 is None:
+            print(
+                f"  ❌ Không tìm được route >= {_MIN_POI} POI "
+                f"dù đã giảm stay_time tới {_MAX_REDUCTION:.0f} phút."
+            )
+            self.calculator.stay_time_reduction = 0.0
+            return []
+
+        all_routes = [route_1]
+        seen_place_sets = {tuple(sorted(route_1["route"]))}
+        
+        print(f"🎯 Route 1: {len(route_1['route'])} POI, total_score={route_1['total_score']:.2f}")
+        
+        # ================================================================
+        # Xây dựng route 2, 3, ... với cùng logic select_first_poi
+        # - Giữ nguyên stay_time_reduction đã xác lập lúc build route_1
+        # - Mỗi route mới: gọi select_first_poi với exclude_indices = tất cả
+        #   first POI đã dùng ở các route trước → đúng filter meal/cafe/opening
+        # - Thử tối đa _MAX_ATTEMPTS candidates cho mỗi route; nếu candidate nào
+        #   trả về >= 3 POI và đủ khác biệt (>= 2 POI khác) thì chấp nhận
+        # ================================================================
+        if max_routes > 1:
+            # Tập hợp first POI đã dùng, bắt đầu từ route_1
+            _used_first_pois: set = {route_1["route"][0]}
+
+            while len(all_routes) < max_routes:
+                # Lấy tối đa _MAX_ATTEMPTS POI xuất phát mới (chưa dùng, đúng logic)
+                _candidates_n: list = []
+                _exclude_n: set = _used_first_pois.copy()
+                for _ in range(_MAX_ATTEMPTS):
+                    _idx_n, _ = _builder_ref.select_first_poi(
+                        places=places,
+                        first_place_idx=None,
+                        distance_matrix=distance_matrix,
+                        max_distance=max_distance,
+                        transportation_mode=transportation_mode,
+                        current_datetime=current_datetime,
+                        should_insert_restaurant_for_meal=_meal_info["should_insert_restaurant_for_meal"],
+                        meal_windows=_meal_info["meal_windows"],
+                        should_insert_cafe=_meal_info.get("should_insert_cafe", False),
+                        exclude_indices=_exclude_n
+                    )
+                    if _idx_n is None:
+                        break
+                    _candidates_n.append(_idx_n)
+                    _exclude_n.add(_idx_n)
+
+                if not _candidates_n:
+                    break  # Không còn POI xuất phát hợp lệ nào
+
+                _found_next = False
+                for _first_idx_n in _candidates_n:
+                    if duration_mode:
+                        route_result = self.duration_builder.build_route(
+                            user_location=user_location,
+                            places=places,
+                            transportation_mode=transportation_mode,
+                            max_time_minutes=max_time_minutes,
+                            first_place_idx=_first_idx_n,
+                            current_datetime=current_datetime,
+                            distance_matrix=distance_matrix,
+                            max_distance=max_distance
+                        )
+                    else:
+                        route_result = self.target_builder.build_route(
+                            user_location=user_location,
+                            places=places,
+                            transportation_mode=transportation_mode,
+                            max_time_minutes=max_time_minutes,
+                            target_places=target_places,
+                            first_place_idx=_first_idx_n,
+                            current_datetime=current_datetime,
+                            distance_matrix=distance_matrix,
+                            max_distance=max_distance
+                        )
+
+                    if route_result is None or len(route_result.get("places", [])) < _MIN_POI:
+                        _used_first_pois.add(_first_idx_n)  # Đánh dấu đã thử, không dùng lại
+                        continue
+
+                    place_set_key = tuple(sorted(route_result["route"]))
+                    if place_set_key in seen_place_sets:
+                        _used_first_pois.add(_first_idx_n)
+                        continue
+
+                    is_different_enough = all(
+                        len(set(route_result["route"]).symmetric_difference(set(r["route"]))) >= 2
+                        for r in all_routes
+                    )
+                    if not is_different_enough:
+                        _used_first_pois.add(_first_idx_n)
+                        continue
+
+                    seen_place_sets.add(place_set_key)
+                    all_routes.append(route_result)
+                    _used_first_pois.add(_first_idx_n)
+                    _found_next = True
+                    print(
+                        f"🎯 Route {len(all_routes)}: {len(route_result['route'])} POI, "
+                        f"total_score={route_result['total_score']:.2f}, "
+                        f"first_poi={_first_idx_n}"
+                    )
+                    break  # Đã có route mới, chuyển vòng ngoài
+
+                if not _found_next:
+                    break  # Không tìm được route đủ điều kiện, dừng
         
         print(f"\n📊 Kết quả: {len(all_routes)} route(s)")
         for idx, route in enumerate(all_routes, 1):
@@ -263,6 +363,7 @@ class RouteBuilder:
             
             result.append(route_data)
         
+        self.calculator.stay_time_reduction = 0.0  # Reset sau khi hoàn thành build_routes
         return result
     
     async def build_routes_async(

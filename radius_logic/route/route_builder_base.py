@@ -136,7 +136,8 @@ class BaseRouteBuilder:
         current_datetime: Optional[datetime],
         should_insert_restaurant_for_meal: bool,
         meal_windows: Optional[Dict] = None,
-        should_insert_cafe: bool = False
+        should_insert_cafe: bool = False,
+        exclude_indices: Optional[set] = None  # Tập các index POI cần bỏ qua (dùng cho fallback)
     ) -> Tuple[Optional[int], bool]:
         """
         Chọn POI đầu tiên cho route dựa trên combined score (score + distance)
@@ -201,13 +202,17 @@ class BaseRouteBuilder:
             return cat == "Restaurant"
         
         for i, place in enumerate(places):
+            # Bỏ qua các POI đã được chọn ở lần thử trước (dùng khi build 5 candidates)
+            if exclude_indices and i in exclude_indices:
+                continue
+
             if current_datetime:
                 travel_time = self.calculator.calculate_travel_time(
                     distance_matrix[0][i + 1],
                     transportation_mode
                 )
                 # validate for travl_time > 10
-                if travel_time > 10 and transportation_mode == "WALKING":  
+                if travel_time > 15 and transportation_mode == "WALKING":  
                     print(f"Travel time {travel_time} phút quá lớn → BỎ QUA {place.get('name')}")
                     continue
                 arrival_time = TimeUtils.get_arrival_time(current_datetime, travel_time)
@@ -377,7 +382,7 @@ class BaseRouteBuilder:
                     transportation_mode
                 )
                 # validate for travl_time > 10 
-                if travel_time > 10 and transportation_mode == "WALKING":  
+                if travel_time > 15 and transportation_mode == "WALKING":  
                     print(f"Travel time {travel_time} phút quá lớn → BỎ QUA {place.get('name')}")
                     continue
                 
@@ -438,7 +443,7 @@ class BaseRouteBuilder:
                     distance_matrix[current_pos][i + 1],
                     transportation_mode
                 )
-                temp_stay = total_stay_time + self.calculator.get_stay_time(
+                temp_stay = total_stay_time + self.calculator.get_stay_time_reduction(
                     places[i].get("poi_type", ""),
                     places[i].get("stay_time")
                 )
@@ -534,7 +539,7 @@ class BaseRouteBuilder:
                 distance_matrix[prev_pos][place_idx + 1],
                 transportation_mode
             )
-            stay_time = self.calculator.get_stay_time(
+            stay_time = self.calculator.get_stay_time_reduction(
                 place.get("poi_type", ""),
                 place.get("stay_time")
             )

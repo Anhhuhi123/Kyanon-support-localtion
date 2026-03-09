@@ -10,6 +10,10 @@ class Calculator:
 
     def __init__(self, geographic_utils: GeographicUtils):
         self.geo = geographic_utils
+        # Số phút trừ vào stay_time khi build_routes kích hoạt fallback.
+        # Mặc định = 0 (hành vi giống get_stay_time). build_routes sẽ tăng
+        # giá trị này lên 10 phút mỗi vòng khi 5 route đều < 3 POI.
+        self.stay_time_reduction: float = 0.0
 
     def calculate_travel_time(self, distance_km: float, transportation_mode: str) -> float:
         """
@@ -32,6 +36,29 @@ class Calculator:
             except (TypeError, ValueError):
                 pass
         return RouteConfig.DEFAULT_STAY_TIME
+
+    def get_stay_time_reduction(self, poi_type: str, stay_time: Optional[float] = None) -> float:
+        """
+        Giống get_stay_time nhưng trừ thêm self.stay_time_reduction (phút).
+
+        Được các builder gọi thay cho get_stay_time để hỗ trợ cơ chế fallback
+        trong build_routes: khi 5 lần thử liên tiếp đều cho route < 3 POI,
+        build_routes tăng stay_time_reduction lên 10 phút và gọi lại builder,
+        khiến thời gian lưu trú ngắn hơn → route có thể nhét thêm POI vào
+        time budget.
+
+        Khi stay_time_reduction = 0.0 (mặc định), hàm hoạt động y hệt
+        get_stay_time, không ảnh hưởng logic hiện tại.
+
+        Args:
+            poi_type: Loại POI (giữ để tương thích chữ ký với get_stay_time)
+            stay_time: Thời gian lưu trú tùy chỉnh (phút), None = dùng DEFAULT
+
+        Returns:
+            Thời gian lưu trú (phút) đã trừ stay_time_reduction, tối thiểu 0.0
+        """
+        base = self.get_stay_time(poi_type, stay_time)
+        return max(base - self.stay_time_reduction, 0.0)
 
     def calculate_combined_score(
         self,
