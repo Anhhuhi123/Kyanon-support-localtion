@@ -17,6 +17,7 @@ Created: 2026-01
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Tuple, Optional
 from utils.time_utils import TimeUtils
+from .route_config import RouteConfig
 from .route_builder_base import BaseRouteBuilder
 
 class TargetRouteBuilder(BaseRouteBuilder):
@@ -279,12 +280,28 @@ class TargetRouteBuilder(BaseRouteBuilder):
             current_pos = poi_idx + 1
         
         # 5. Chọn điểm cuối
-        best_last = self.select_last_poi(
-            places, visited, current_pos, distance_matrix, max_radius,
-            transportation_mode, max_distance, total_travel_time, total_stay_time,
-            max_time_minutes, current_datetime, should_insert_restaurant_for_meal,
-            meal_windows, lunch_restaurant_inserted, dinner_restaurant_inserted
-        )
+        best_last = None
+        radius_thresholds = RouteConfig.LAST_POI_RADIUS_THRESHOLDS
+        
+        for threshold_multiplier in radius_thresholds:
+            current_threshold = threshold_multiplier * max_radius
+            print(f"\n{'='*100}\n🔍 LAST POI SEARCH @ Threshold {threshold_multiplier*100:.0f}% = {current_threshold:.3f}km\n{'='*100}")
+            
+            best_last_result = self._select_middle_poi(
+                places, route, visited, current_pos, distance_matrix, max_distance,
+                transportation_mode, max_time_minutes, total_travel_time, total_stay_time,
+                current_datetime, prev_bearing, user_location,
+                all_categories, category_sequence, should_insert_restaurant_for_meal,
+                meal_windows, need_lunch_restaurant, need_dinner_restaurant,
+                lunch_restaurant_inserted, dinner_restaurant_inserted,
+                should_insert_cafe, cafe_counter,
+                is_last_poi=True, max_radius=current_threshold
+            )
+            
+            if best_last_result and best_last_result.get('index') is not None:
+                best_last = best_last_result['index']
+                print(f"🎯 Chọn POI cuối: [{best_last}] {places[best_last].get('name')} (threshold={threshold_multiplier*100:.0f}%)")
+                break
         
         if best_last is not None:
             route.append(best_last)
@@ -323,7 +340,8 @@ class TargetRouteBuilder(BaseRouteBuilder):
         current_datetime, prev_bearing, user_location, all_categories, category_sequence,
         should_insert_restaurant_for_meal, meal_windows, need_lunch_restaurant,
         need_dinner_restaurant, lunch_restaurant_inserted, dinner_restaurant_inserted,
-        should_insert_cafe: bool = False, cafe_counter: int = 0
+        should_insert_cafe: bool = False, cafe_counter: int = 0,
+        is_last_poi: bool = False, max_radius: Optional[float] = None
     ) -> Optional[Dict[str, Any]]:
         """Chọn POI giữa với logic xen kẽ category, meal priority và cafe-sequence"""
         
@@ -446,6 +464,11 @@ class TargetRouteBuilder(BaseRouteBuilder):
             if last_added_place and self.validator.is_same_food_type(last_added_place, place):
                 continue
             
+            if is_last_poi and max_radius is not None:
+                dist_to_user = distance_matrix[i + 1][0]
+                if dist_to_user > max_radius:
+                    continue
+            
             if current_datetime:
                 travel_time_to_poi = self.calculator.calculate_travel_time(
                     distance_matrix[current_pos][i + 1],
@@ -464,7 +487,8 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 distance_matrix=distance_matrix,
                 max_distance=max_distance,
                 prev_bearing=prev_bearing,
-                user_location=user_location
+                user_location=user_location,
+                is_last=is_last_poi
             )
             
             # Kiểm tra thời gian khả thi
@@ -529,6 +553,11 @@ class TargetRouteBuilder(BaseRouteBuilder):
                 if last_added_place and self.validator.is_same_food_type(last_added_place, place):
                     continue
                 
+                if is_last_poi and max_radius is not None:
+                    dist_to_user = distance_matrix[i + 1][0]
+                    if dist_to_user > max_radius:
+                        continue
+                
                 if current_datetime:
                     travel_time_to_poi = self.calculator.calculate_travel_time(
                         distance_matrix[current_pos][i + 1],
@@ -547,7 +576,8 @@ class TargetRouteBuilder(BaseRouteBuilder):
                     distance_matrix=distance_matrix,
                     max_distance=max_distance,
                     prev_bearing=prev_bearing,
-                    user_location=user_location
+                    user_location=user_location,
+                    is_last=is_last_poi
                 )
                 
                 temp_travel = total_travel_time + self.calculator.calculate_travel_time(
